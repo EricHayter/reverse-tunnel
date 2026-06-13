@@ -1,3 +1,2 @@
-add_executable(tunnel
-    main.cpp
-)
+add_subdirectory(client)
+add_subdirectory(server)
