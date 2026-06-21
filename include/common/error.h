@@ -7,6 +7,10 @@ enum class TunnelErrc {
     // MAYBE ONE FOR BAD FORMAT ON IP invalid_
     empty_mapping,
     invalid_address,
+    invalid_mapping,
+    file_open_failed,
+    invalid_arguments,
+    socket_creation_failure,
 };
 
 struct Error {

@@ -2,13 +2,13 @@
 #include "common/parsing.h"
 
 #include <fstream>
-#include <stdexcept>
 #include <string>
 
-std::vector<PortMapping> parse_mapping_file(const std::filesystem::path& file_path) {
+std::expected<std::vector<PortMapping>, Error> parse_mapping_file(const std::filesystem::path& file_path) {
     std::ifstream file(file_path);
     if (!file)
-        throw std::runtime_error("cannot open " + file_path.string());
+        return std::unexpected(Error{TunnelErrc::file_open_failed,
+                                     "cannot open " + file_path.string()});
 
     std::vector<PortMapping> mappings;
     std::string line;
@@ -17,7 +17,8 @@ std::vector<PortMapping> parse_mapping_file(const std::filesystem::path& file_pa
             continue;
         auto mapping = parse_port_mapping(line);
         if (!mapping)
-            throw std::runtime_error("invalid mapping: " + line);
+            return std::unexpected(Error{TunnelErrc::invalid_mapping,
+                                         "invalid mapping: " + line});
         mappings.push_back(*mapping);
     }
     return mappings;

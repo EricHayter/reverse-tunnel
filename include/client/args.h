@@ -1,5 +1,8 @@
 #pragma once
 
-#include "client/definitions.h"
+#include <expected>
 
-ClientConfig parse_mapping_args(int argc, const char** argv);
+#include "client/definitions.h"
+#include "common/error.h"
+
+std::expected<ClientConfig, Error> parse_mapping_args(int argc, const char** argv);
