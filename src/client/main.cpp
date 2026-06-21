@@ -3,7 +3,7 @@
 #include "client/connection.h"
 
 int main(int argc, const char** argv) {
-    auto config = parse_mapping_args(argc, argv);
+    auto config = parse_mapping_configuration(argc, argv);
     if (!config) {
         std::cerr << "error: " << config.error().context << '\n';
         return 1;

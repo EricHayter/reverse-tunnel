@@ -2,10 +2,49 @@
 
 #include <argparse/argparse.hpp>
 
-#include "client/file_parsing.h"
-#include "client/list_parsing.h"
+#include <fstream>
+#include <string>
 
-std::expected<ClientConfig, Error> parse_mapping_args(int argc, const char** argv) {
+#include "common/parsing.h"
+
+std::expected<std::vector<PortMapping>, Error> parse_mapping_list(std::string_view list) {
+    std::vector<PortMapping> mappings;
+    while (!list.empty()) {
+        auto comma = list.find(',');
+        auto segment = list.substr(0, comma);
+        auto mapping = parse_port_mapping(segment);
+        if (!mapping)
+            return std::unexpected(Error{TunnelErrc::invalid_mapping,
+                                         "invalid mapping: " + std::string(segment)});
+        mappings.push_back(*mapping);
+        if (comma == std::string_view::npos)
+            break;
+        list.remove_prefix(comma + 1);
+    }
+    return mappings;
+}
+
+std::expected<std::vector<PortMapping>, Error> parse_mapping_file(const std::filesystem::path& file_path) {
+    std::ifstream file(file_path);
+    if (!file)
+        return std::unexpected(Error{TunnelErrc::file_open_failed,
+                                     "cannot open " + file_path.string()});
+
+    std::vector<PortMapping> mappings;
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty())
+            continue;
+        auto mapping = parse_port_mapping(line);
+        if (!mapping)
+            return std::unexpected(Error{TunnelErrc::invalid_mapping,
+                                         "invalid mapping: " + line});
+        mappings.push_back(*mapping);
+    }
+    return mappings;
+}
+
+std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const char** argv) {
     argparse::ArgumentParser program("client");
     program.add_argument("addr")
         .help("IP (v4 or v6) address of tunnel server");
