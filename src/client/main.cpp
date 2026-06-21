@@ -1,5 +1,6 @@
 #include <iostream>
 #include "client/args.h"
+#include "client/connection.h"
 
 int main(int argc, const char** argv) {
     auto config = parse_mapping_args(argc, argv);
@@ -8,9 +9,11 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    for (const auto& m : config->mappings)
-        std::cout << m.to << " -> " << m.from << '\n';
+    auto err = connect(config->ip_addr, config->mappings);
+    if (err) {
+        std::cerr << "error: " << err->context << '\n';
+        return 1;
+    }
 
-    // start client
     return 0;
 }
