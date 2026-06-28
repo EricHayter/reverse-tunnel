@@ -19,7 +19,7 @@ std::optional<Error> connect(std::string_view addr_string, std::span<PortMapping
     addrinfo *server_info;
 
     int res =  getaddrinfo(addr_string.data(),
-        std::to_string(SERVER_HANDSHAKE_PORTNUM).data(),
+        SERVER_HANDSHAKE_PORTNUM.data(),
         &hints,
         &server_info
     );
