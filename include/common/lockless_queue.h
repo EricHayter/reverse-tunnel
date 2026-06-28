@@ -51,6 +51,8 @@
  * of pushing (i.e. the tail's pointer goes from nullptr to a new node).
  */
 
+namespace experimental {
+
 template<typename T>
 class Queue {
 public:
@@ -126,3 +128,5 @@ void Queue<T>::push(T&& val)
         }
     }
 }
+
+}; // namespace experimental
