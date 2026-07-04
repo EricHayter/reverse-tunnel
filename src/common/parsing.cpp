@@ -21,8 +21,5 @@ std::optional<PortMapping> parse_port_mapping(std::string_view port_mapping_stri
     if (!to_port || !from_port)
         return {};
 
-    return PortMapping{
-        .to = *to_port,
-        .from = *from_port,
-    };
+    return PortMapping{ *from_port, *to_port };
 }

@@ -92,16 +92,16 @@ Error Server::handle_handshake()
         if (!read_success) {
             return Error{ .context = "Failed to read number of mappings" };
         }
-        PortMapping port_mapping{
-            .to = num_mappings = ntohs(*(uint16_t*)buffer.data()),
-            .from = num_mappings = ntohs(*((uint16_t*)buffer.data() + 1)),
-        };
+
+        PortNum to = num_mappings = ntohs(*(uint16_t*)buffer.data());
+        PortNum from = num_mappings = ntohs(*((uint16_t*)buffer.data() + 1));
+
         // mapping log stuff here...
-        port_map_m[port_mapping.from] = port_mapping.to;
+        port_map_m[from] = to;
         mappings_processed++;
         std::cout << std::format("Received port mapping #%d:\n", mappings_processed);
-        std::cout << std::format("to: %d\n" , port_mapping.to);
-        std::cout << std::format("from: %d\n\n" , port_mapping.from);
+        std::cout << std::format("to: %d\n" , to);
+        std::cout << std::format("from: %d\n\n" , from);
     }
 
 
