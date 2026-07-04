@@ -6,5 +6,5 @@ add_executable(client
 
 target_link_libraries(client
     argparse
-    tunnel
+    tunnel_common
 )
