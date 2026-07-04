@@ -9,6 +9,8 @@
 #include <sys/socket.h>
 #include <netdb.h>
 
+#include "spdlog/spdlog.h"
+
 #include "common/sock_helper.h"
 
 Client::Client(std::string_view addr_string, std::span<const PortMapping> mappings)
@@ -37,9 +39,17 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
         throw std::runtime_error("Failed to create socket FD");
     }
 
+    spdlog::debug("Attempting to connect at {} on port {}",
+        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
+        SERVER_HANDSHAKE_PORTNUM);
+
     if (connect(sock_fd_m, server_info->ai_addr, server_info->ai_addrlen) == -1) {
         throw std::runtime_error("Call to connect() failed");
     };
+
+    spdlog::debug("Successfully connected to {} on port {}, sending mapping message",
+        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
+        SERVER_HANDSHAKE_PORTNUM);
 
     auto err = send_mapping_message();
     if (err) {
@@ -51,8 +61,7 @@ std::optional<Error> Client::send_mapping_message()
 {
     int offset = 0;
 
-    // This is godawful shouldn't be using ints here. Going to check if I can pass
-    std::vector<std::byte> msg_buffer((1 + 2 * mappings_m.size()) * sizeof(int));
+    std::vector<std::byte> msg_buffer((1 + 2 * mappings_m.size()) * sizeof(PortNum));
 
     uint16_t mapping_count = htons(static_cast<uint16_t>(mappings_m.size()));
     std::memcpy(msg_buffer.data() + offset, &mapping_count, sizeof(mapping_count));
@@ -70,7 +79,7 @@ std::optional<Error> Client::send_mapping_message()
     // can use a helper here to send
     auto err_code = send_bytes(sock_fd_m, msg_buffer);
     if (err_code)
-        return Error{ .context = std::format("Failed to send data to server (errno %d)", *err_code) };
+        return Error{ .context = std::format("Failed to send data to server (errno {})", *err_code) };
 
     return {};
 }

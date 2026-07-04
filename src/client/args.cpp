@@ -1,9 +1,10 @@
 #include "client/args.h"
 
-#include <argparse/argparse.hpp>
-
 #include <fstream>
 #include <string>
+
+#include <argparse/argparse.hpp>
+#include "spdlog/spdlog.h"
 
 #include "common/parsing.h"
 
@@ -52,6 +53,9 @@ std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const c
         .help("file containing a list of client-server port mappings");
     program.add_argument("-l", "--list")
         .help("list of client-server port mappings");
+    program.add_argument("-v", "--verbose")
+        .help("increase output verbosity")
+        .flag();
 
     try {
         program.parse_args(argc, argv);
@@ -62,6 +66,10 @@ std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const c
     ClientConfig config;
 
     config.ip_addr = program.get("addr");
+
+    if (program["--verbose"] == true) {
+        spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
+    }
 
     if (auto file_path = program.present("-f")) {
         auto file_mappings = parse_mapping_file(*file_path);

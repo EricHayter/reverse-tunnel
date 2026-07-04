@@ -7,4 +7,5 @@ add_executable(client
 target_link_libraries(client
     argparse
     tunnel_common
+    spdlog
 )
