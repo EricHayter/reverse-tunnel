@@ -96,7 +96,7 @@ Error Server::handle_handshake()
     }
     num_mappings = ntohs(*(uint16_t*)buffer.data());
 
-    spdlog::debug("Client provided {} mappings", num_mappings);
+    spdlog::debug("Client provided {} mapping(s)", num_mappings);
 
     uint16_t mappings_processed{ 0 };
     while (mappings_processed < num_mappings) {
@@ -107,13 +107,12 @@ Error Server::handle_handshake()
 
         PortNum to = num_mappings = ntohs(*(uint16_t*)buffer.data());
         PortNum from = num_mappings = ntohs(*((uint16_t*)buffer.data() + 1));
+        PortMapping port_mapping{ from, to };
 
         // mapping log stuff here...
         port_map_m[from] = to;
         mappings_processed++;
-        spdlog::debug("Received port mapping #{}:", mappings_processed);
-        spdlog::debug("to: {}" , to);
-        spdlog::debug("from: {}\n" , from);
+        spdlog::debug("Received port mapping #{}: {}", mappings_processed, to_string(port_mapping));
     }
 
 
