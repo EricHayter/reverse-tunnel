@@ -1,7 +1,7 @@
 add_executable(client
     main.cpp
     args.cpp
-    connection.cpp
+    client.cpp
 )
 
 target_link_libraries(client
