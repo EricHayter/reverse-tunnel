@@ -19,3 +19,20 @@ bool read_bytes(int socket_fd, std::span<std::byte> buffer)
     }
     return true;
 }
+
+std::optional<int> send_bytes(int socket_fd, std::span<const std::byte> buffer)
+{
+    while (true) {
+        int send_size = send(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
+        // socket got closed
+        if (send_size == 0) return false;
+        // error of some sort
+        if (send_size < 0) {
+            // the read was interrupted for whatever reason
+            if (errno == EINTR) continue;
+            return false;
+        }
+        buffer = buffer.subspan(send_size);
+    }
+    return true;
+}
