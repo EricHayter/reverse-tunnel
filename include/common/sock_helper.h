@@ -8,7 +8,7 @@
 
 /* Read from a socket file descriptor into a buffer's span. Reads required
  * amount to fill the entire span */
-bool read_bytes(int socket_fd, std::span<std::byte> buffer);
+std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer);
 
 
 /* Send the entire contents of the buffer over the given socket */

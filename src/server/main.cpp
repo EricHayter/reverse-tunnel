@@ -25,7 +25,7 @@ int main(int argc, const char** argv) {
         spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
     }
 
-    spdlog::info("Starting server!\n");
+    spdlog::info("Starting server");
     Server server{ 4 };
     auto err = server.handle_handshake();
 }

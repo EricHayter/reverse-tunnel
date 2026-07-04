@@ -84,11 +84,14 @@ Error Server::handle_handshake()
         return Error{ .context = "Call to accept() failed" };
     }
 
+    spdlog::debug("Accepted connection from {}",
+            get_addr_string(*reinterpret_cast<sockaddr_in*>(&addr)));
+
     std::array<std::byte, 2 * sizeof(uint16_t)> buffer;
 
     uint16_t num_mappings{ 0 };
-    bool read_success = read_bytes(conn_fd, std::span(buffer).subspan(0, sizeof(uint16_t)));
-    if (!read_success) {
+    auto read_errc = read_bytes(conn_fd, std::span(buffer).subspan(0, sizeof(PortNum)));
+    if (read_errc) {
         return Error{ .context = "Failed to read number of mappings" };
     }
     num_mappings = ntohs(*(uint16_t*)buffer.data());
@@ -97,8 +100,8 @@ Error Server::handle_handshake()
 
     uint16_t mappings_processed{ 0 };
     while (mappings_processed < num_mappings) {
-        read_success = read_bytes(conn_fd, std::span(buffer).subspan(0, 2 * sizeof(uint16_t)));
-        if (!read_success) {
+        read_errc = read_bytes(conn_fd, std::span(buffer).subspan(0, 2 * sizeof(uint16_t)));
+        if (read_errc) {
             return Error{ .context = "Failed to read number of mappings" };
         }
 

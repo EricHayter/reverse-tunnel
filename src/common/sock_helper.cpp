@@ -4,7 +4,7 @@
 #include <sys/socket.h>
 #include <errno.h>
 
-bool read_bytes(int socket_fd, std::span<std::byte> buffer)
+std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer)
 {
     while (true) {
         int recv_size = recv(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
