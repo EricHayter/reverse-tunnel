@@ -1,14 +1,17 @@
 #include "server/server.h"
-#include "common/definitions.h"
-#include "common/sock_helper.h"
 
 #include <cstring>
 #include <array>
-#include <iostream>
 
+#include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+
+#include "spdlog/spdlog.h"
+
+#include "common/definitions.h"
+#include "common/sock_helper.h"
 
 Server::Server(std::size_t num_workers)
 {
@@ -68,6 +71,10 @@ Error Server::handle_handshake()
         return Error{ .context = "Call to listen() failed" };
     }
 
+    spdlog::debug("Started listening at {} on port {}",
+            get_addr_string(*reinterpret_cast<sockaddr_in*>(local_addr->ai_addr)),
+            SERVER_HANDSHAKE_PORTNUM);
+
     // this is going to be some sort of epoll thing
     // accept()
     sockaddr_storage addr;
@@ -86,6 +93,8 @@ Error Server::handle_handshake()
     }
     num_mappings = ntohs(*(uint16_t*)buffer.data());
 
+    spdlog::debug("Client provided {} mappings", num_mappings);
+
     uint16_t mappings_processed{ 0 };
     while (mappings_processed < num_mappings) {
         read_success = read_bytes(conn_fd, std::span(buffer).subspan(0, 2 * sizeof(uint16_t)));
@@ -99,9 +108,9 @@ Error Server::handle_handshake()
         // mapping log stuff here...
         port_map_m[from] = to;
         mappings_processed++;
-        std::cout << std::format("Received port mapping #%d:\n", mappings_processed);
-        std::cout << std::format("to: %d\n" , to);
-        std::cout << std::format("from: %d\n\n" , from);
+        spdlog::debug("Received port mapping #{}:", mappings_processed);
+        spdlog::debug("to: {}" , to);
+        spdlog::debug("from: {}\n" , from);
     }
 
 

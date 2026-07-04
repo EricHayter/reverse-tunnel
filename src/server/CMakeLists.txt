@@ -3,8 +3,9 @@ add_executable(server
     main.cpp
 )
 
-target_link_libraries(
-    server
+target_link_libraries(server
     tunnel_common
+    argparse
+    spdlog
 )
 
