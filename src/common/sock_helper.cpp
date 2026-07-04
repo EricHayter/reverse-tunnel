@@ -1,5 +1,6 @@
 #include "common/sock_helper.h"
 
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <errno.h>
 
@@ -35,4 +36,11 @@ std::optional<int> send_bytes(int socket_fd, std::span<const std::byte> buffer)
         buffer = buffer.subspan(send_size);
     }
     return true;
+}
+
+std::string get_addr_string(const sockaddr_in& sock_addr)
+{
+    char str[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &(sock_addr.sin_addr), str, INET_ADDRSTRLEN);
+    return str;
 }
