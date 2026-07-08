@@ -25,7 +25,7 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
     addrinfo *server_info;
 
     int res =  getaddrinfo(addr_string.data(),
-        SERVER_HANDSHAKE_PORTNUM.data(),
+        SERVER_LISTENING_PORTNUM.data(),
         &hints,
         &server_info
     );
@@ -41,7 +41,7 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
 
     spdlog::debug("Attempting to connect at {} on port {}",
         get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
-        SERVER_HANDSHAKE_PORTNUM);
+        SERVER_LISTENING_PORTNUM);
 
     if (connect(sock_fd_m, server_info->ai_addr, server_info->ai_addrlen) == -1) {
         throw std::runtime_error("Call to connect() failed");
@@ -49,7 +49,7 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
 
     spdlog::debug("Successfully connected to {} on port {}, sending mapping message",
         get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
-        SERVER_HANDSHAKE_PORTNUM);
+        SERVER_LISTENING_PORTNUM);
 
     auto err = send_mapping_message();
     if (err) {
