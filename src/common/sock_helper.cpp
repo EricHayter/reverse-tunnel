@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <errno.h>
 
+#include <cstring>
+
 std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer)
 {
     while (true) {
@@ -45,4 +47,11 @@ std::string get_addr_string(const sockaddr_in& sock_addr)
     char str[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &(sock_addr.sin_addr), str, INET_ADDRSTRLEN);
     return str;
+}
+
+std::uint16_t read_net_u16(std::span<const std::byte> bytes)
+{
+    std::uint16_t net{};
+    std::memcpy(&net, bytes.data(), sizeof(net));
+    return ntohs(net);
 }
