@@ -50,12 +50,23 @@ std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const c
     program.add_argument("addr")
         .help("IP (v4 or v6) address of tunnel server");
     program.add_argument("-f", "--file")
-        .help("file containing a list of client-server port mappings");
+        .help("file with one port mapping per line, each formatted as <from>:<to> "
+              "(e.g. 80:8080)");
     program.add_argument("-l", "--list")
-        .help("list of client-server port mappings");
+        .help("comma-separated list of port mappings, each formatted as <from>:<to> "
+              "(e.g. 80:8080,22:2222)");
     program.add_argument("-v", "--verbose")
         .help("increase output verbosity")
         .flag();
+
+    program.add_epilog(
+        "Port mapping format:\n"
+        "  Each mapping is <from>:<to>, where <from> and <to> are port numbers.\n"
+        "\n"
+        "Examples:\n"
+        "  client 192.168.1.5 -l 80:8080\n"
+        "  client 192.168.1.5 -l 80:8080,22:2222\n"
+        "  client 192.168.1.5 -f mappings.txt");
 
     try {
         program.parse_args(argc, argv);

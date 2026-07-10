@@ -15,8 +15,8 @@ std::optional<PortMapping> parse_port_mapping(std::string_view port_mapping_stri
     if (separator_idx == std::string_view::npos)
         return {};
 
-    auto to_port = parse_port_num(port_mapping_string.substr(0, separator_idx));
-    auto from_port = parse_port_num(port_mapping_string.substr(separator_idx + 1));
+    auto from_port = parse_port_num(port_mapping_string.substr(0, separator_idx));
+    auto to_port = parse_port_num(port_mapping_string.substr(separator_idx + 1));
 
     if (!to_port || !from_port)
         return {};
