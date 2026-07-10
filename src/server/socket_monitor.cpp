@@ -1,22 +1,27 @@
 #include "server/socket_monitor.h"
 #include <cassert>
+#include "spdlog/spdlog.h"
 
 SocketMonitor::SocketMonitor()
-    : event_queue_m {}
 {
     constexpr int EPOLL_FLAGS = 0x00;
     epoll_fd_m = epoll_create1(EPOLL_FLAGS);
-    if (epoll_fd_m == -1)
+    if (epoll_fd_m == -1) {
         throw std::runtime_error("Failed to initialize epoll instance in socket monitor");
+    }
 
     listener_thread_m = std::jthread(&SocketMonitor::monitor_job, this);
 }
 
 
-SocketMonitor::~SocketMonitor()
+epoll_event SocketMonitor::create_listener_event(int socket_fd)
 {
-    stop();
+    epoll_event event;
+    event.events =  LISTENER_EVENTS | EPOLL_FLAGS;
+    event.data.fd = socket_fd;
+    return event;
 }
+
 
 std::optional<Error> SocketMonitor::subscribe(epoll_event event)
 {
@@ -33,6 +38,12 @@ std::optional<Error> SocketMonitor::subscribe(epoll_event event)
     return std::nullopt;
 }
 
+void SocketMonitor::unsubscribe(epoll_event event) const
+{
+    int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_DEL, event.data.fd, nullptr);
+    assert(err != -1);
+}
+
 std::optional<Error> SocketMonitor::rearm(epoll_event event)
 {
     event.events |= EPOLLET | EPOLLONESHOT;
@@ -45,10 +56,13 @@ std::optional<Error> SocketMonitor::rearm(epoll_event event)
 
 std::optional<epoll_event> SocketMonitor::pull_event(std::stop_token st)
 {
+    std::stop_callback callback(st, [](){
+        spdlog::debug("Stop requested. Preempting block.");
+    });
     return event_queue_m.pop(st);
 }
 
-void SocketMonitor::stop()
+SocketMonitor::~SocketMonitor()
 {
     listener_thread_m.request_stop();
 }

@@ -1,35 +1,42 @@
 #pragma once
 
+#include <expected>
 #include <vector>
 #include <thread>
-#include <condition_variable>
 #include <unordered_map>
 
-#include "common/error.h"
-#include "common/locking_queue.h"
+#include <sys/socket.h>
+
+#include "server/socket_monitor.h"
 
 class Server {
 public:
     Server(std::size_t num_workers);
-    Error handle_handshake();
-
 private:
-    std::vector<int> fds_m; // TODO might not need this since EPOLL tracks it?
+    std::expected<int, Error> init_listening_socket();
 
-    // EPOLL thread
-    void coordinator_func(std::stop_token st);
-    std::jthread event_thread_m;
-    void wait_events();
+    SocketMonitor sock_monitor_m;
+
+    // special case when handling here (since this is where our management occurs I guess)
+    int listener_sock_fd_m;
+
+
+
+    // client address (i.e. the computer that initiates the connection)
+    sockaddr_storage client_addr_m{};
+    unsigned int client_addr_len_m{};
 
     // worker pool stuff
     std::vector<std::jthread> workers_m;
-    void worker_func(std::stop_token st);
-    Queue<int> queue_m;
-    std::condition_variable cond_m;
-    std::mutex mut_m;
+    void worker_func(const std::stop_token& stop_token);
+    Error handle_handshake();
+    void handle_read_event(int socket_fd);
 
     // stores from-to mapping
     std::unordered_map<int, int> port_map_m;
+
+    // TODO this need a much better name
+    std::unordered_map<int, int> socket_map_m;
 };
 
 // does this even work for single threaded CPUs? Problem: wasting too much

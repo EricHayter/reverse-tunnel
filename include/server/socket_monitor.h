@@ -33,11 +33,20 @@ public:
     SocketMonitor& operator=(const SocketMonitor& other) = delete;
     SocketMonitor(const SocketMonitor& other) = delete;
 
+    static constexpr unsigned int EPOLL_FLAGS  = EPOLLET | EPOLLONESHOT;
+
+    // helper function for creating an epoll event for listeners
+    static epoll_event create_listener_event(int socket_fd);
+    static constexpr unsigned int LISTENER_EVENTS = EPOLLIN | EPOLLERR | EPOLLHUP;
+
+
     // TODO maybe implement moving stuff later
 
     /* Subscribe to a given file descriptor for events. Events on this file
      * descriptor will be pushed to event_queue */
     std::optional<Error> subscribe(epoll_event event);
+
+    void unsubscribe(epoll_event event) const;
 
     /* To prevent possible race conditions where multiple threads could get
      * an event on the same file descriptor the Socket Monitor uses
@@ -47,9 +56,6 @@ public:
     std::optional<Error> rearm(epoll_event event);
 
     std::optional<epoll_event> pull_event(std::stop_token st);
-
-    /* Stops the SocketMonitor (i.e. closes the epoll instance) */
-    void stop();
 private:
     void monitor_job(std::stop_token stop_token);
 
