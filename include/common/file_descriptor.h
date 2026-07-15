@@ -3,7 +3,7 @@
 /* RAII class for handling file descriptors to avoid leaks */
 class FileDescriptor {
 public:
-    explicit FileDescriptor(unsigned int file_descriptor);
+    explicit FileDescriptor(int file_descriptor);
     ~FileDescriptor();
 
     FileDescriptor& operator=(const FileDescriptor&) = delete;
@@ -12,9 +12,9 @@ public:
     FileDescriptor& operator=(FileDescriptor&& other) noexcept;
     FileDescriptor(FileDescriptor&& other) noexcept;
 
-    operator unsigned int() const; // NOLINT(hicpp-explicit-conversions)
+    operator int() const; // NOLINT(hicpp-explicit-conversions)
 
 private:
     bool owning_m{ true };
-    unsigned int file_descriptor_m{};
+    int file_descriptor_m{};
 };

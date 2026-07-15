@@ -1,52 +1,70 @@
 #include "common/sock_helper.h"
 
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/socket.h>
-#include <errno.h>
+#include <sys/types.h>
 
+#include <array>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <optional>
+#include <span>
+#include <string>
 
 std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer)
 {
     while (true) {
-        int recv_size = recv(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
+        const ssize_t recv_size = recv(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
         // socket got closed
-        if (recv_size == 0) return 0;
+        if (recv_size == 0) {
+            return 0;
+        }
         // error of some sort
         if (recv_size < 0) {
             // the read was interrupted for whatever reason
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                continue;
+            }
             return errno;
         }
         buffer = buffer.subspan(recv_size);
-        if (buffer.empty())
+        if (buffer.empty()) {
             return {};
+        }
     }
 }
 
 std::optional<int> send_bytes(int socket_fd, std::span<const std::byte> buffer)
 {
     while (true) {
-        int send_size = send(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
+        const ssize_t send_size = send(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
         // socket got closed
-        if (send_size == 0) return 0;
+        if (send_size == 0) {
+            return 0;
+        }
         // error of some sort
         if (send_size < 0) {
             // the read was interrupted for whatever reason
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                continue;
+            }
             return errno;
         }
         buffer = buffer.subspan(send_size);
-        if (buffer.empty())
+        if (buffer.empty()) {
             return {};
+        }
     }
 }
 
 std::string get_addr_string(const sockaddr_in& sock_addr)
 {
-    char str[INET_ADDRSTRLEN];
-    inet_ntop(AF_INET, &(sock_addr.sin_addr), str, INET_ADDRSTRLEN);
-    return str;
+    std::array<char, INET_ADDRSTRLEN> str{};
+    inet_ntop(AF_INET, &(sock_addr.sin_addr), str.data(), INET_ADDRSTRLEN);
+    return str.data();
 }
 
 std::uint16_t read_net_u16(std::span<const std::byte> bytes)

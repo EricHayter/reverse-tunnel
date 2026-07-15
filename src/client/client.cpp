@@ -13,18 +13,18 @@
 
 #include "common/sock_helper.h"
 
-Client::Client(std::string_view addr_string, std::span<const PortMapping> mappings)
+Client::Client(const std::string& addr_string, std::span<const PortMapping> mappings)
     : mappings_m{ mappings.begin(), mappings.end() }
 {
     // Initial connection setup (might not need get addr info?
-    addrinfo hints;
+    addrinfo hints{};
     std::memset(&hints, 0, sizeof(hints));  // NULL it out so we only select what we wnat
     hints.ai_family = AF_INET;              // only going to use IPv4 for now..
     hints.ai_socktype = SOCK_STREAM;        // TCP
 
-    addrinfo *server_info;
+    addrinfo *server_info{};
 
-    int res =  getaddrinfo(addr_string.data(),
+    int res =  getaddrinfo(addr_string.c_str(),
         SERVER_LISTENING_PORTNUM.data(),
         &hints,
         &server_info
@@ -40,7 +40,7 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
     }
 
     spdlog::debug("Attempting to connect at {} on port {}",
-        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
+        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
         SERVER_LISTENING_PORTNUM);
 
     if (connect(sock_fd_m, server_info->ai_addr, server_info->ai_addrlen) == -1) {
@@ -48,7 +48,7 @@ Client::Client(std::string_view addr_string, std::span<const PortMapping> mappin
     };
 
     spdlog::debug("Successfully connected to {} on port {}, sending mapping message",
-        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)),
+        get_addr_string(*reinterpret_cast<sockaddr_in*>(server_info->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
         SERVER_LISTENING_PORTNUM);
 
     auto err = send_mapping_message();
@@ -61,25 +61,25 @@ std::optional<Error> Client::send_mapping_message()
 {
     int offset = 0;
 
-    std::vector<std::byte> msg_buffer((1 + 2 * mappings_m.size()) * sizeof(PortNum));
+    std::vector<std::byte> msg_buffer((1 + (2 * mappings_m.size())) * sizeof(PortNum));
 
     uint16_t mapping_count = htons(static_cast<uint16_t>(mappings_m.size()));
-    std::memcpy(msg_buffer.data() + offset, &mapping_count, sizeof(mapping_count));
+    std::memcpy(std::span(msg_buffer).subspan(offset).data(), &mapping_count, sizeof(mapping_count));
     offset += sizeof(mapping_count);
 
     // serializing the mappings_m
-    for (const PortMapping& mapping: mappings_m) {
-        auto [from, to] = mapping;
-        std::memcpy(msg_buffer.data() + offset, &from, sizeof(from));
-        offset += sizeof(from);
-        std::memcpy(msg_buffer.data() + offset, &to, sizeof(to));
-        offset += sizeof(to);
+    for (const auto& [from_port, to_port]: mappings_m) {
+        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &from_port, sizeof(from_port));
+        offset += sizeof(from_port);
+        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &to_port, sizeof(to_port));
+        offset += sizeof(to_port);
     }
 
     // can use a helper here to send
     auto err_code = send_bytes(sock_fd_m, msg_buffer);
-    if (err_code)
+    if (err_code) {
         return Error{ .context = std::format("Failed to send data to server (errno {})", *err_code) };
+    }
 
     return {};
 }

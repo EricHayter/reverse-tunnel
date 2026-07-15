@@ -2,8 +2,9 @@
 
 #include <string>
 #include <string_view>
+#include <cstdint>
 
-enum class TunnelErrc {
+enum class TunnelErrc : uint8_t {
     // MAYBE ONE FOR BAD FORMAT ON IP invalid_
     empty_mapping,
     invalid_address,
@@ -17,5 +18,7 @@ struct Error {
     TunnelErrc errc;
     std::string context;
     Error with(std::string_view context) &&;
+
+    [[nodiscard]]
     Error with(std::string_view context) const&;
 };

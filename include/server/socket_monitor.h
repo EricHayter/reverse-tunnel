@@ -21,6 +21,7 @@
 
 #include "common/locking_queue.h"
 #include "common/error.h"
+#include "common/file_descriptor.h"
 
 class SocketMonitor {
 public:
@@ -33,7 +34,12 @@ public:
     SocketMonitor& operator=(const SocketMonitor& other) = delete;
     SocketMonitor(const SocketMonitor& other) = delete;
 
-    static constexpr unsigned int EPOLL_FLAGS  = EPOLLET | EPOLLONESHOT;
+    SocketMonitor& operator=(SocketMonitor&& other) noexcept = default;
+    SocketMonitor(SocketMonitor&& other) noexcept = default;
+
+
+
+    static constexpr int EPOLL_FLAGS  = EPOLLET | EPOLLONESHOT;
 
     // helper function for creating an epoll event for listeners
     static epoll_event create_listener_event(int socket_fd);
@@ -55,11 +61,11 @@ public:
      * an event has been handled */
     std::optional<Error> rearm(epoll_event event);
 
-    std::optional<epoll_event> pull_event(std::stop_token st);
+    std::optional<epoll_event> pull_event(const std::stop_token& stop_token);
 private:
-    void monitor_job(std::stop_token stop_token);
+    void monitor_job(const std::stop_token& stop_token);
 
-    Queue<epoll_event> event_queue_m{ };
-    int epoll_fd_m{ };
+    Queue<epoll_event> event_queue_m;
+    FileDescriptor epoll_fd_m;
     std::jthread listener_thread_m;
 };

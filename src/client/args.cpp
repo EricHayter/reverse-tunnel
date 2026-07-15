@@ -14,12 +14,14 @@ std::expected<std::vector<PortMapping>, Error> parse_mapping_list(std::string_vi
         auto comma = list.find(',');
         auto segment = list.substr(0, comma);
         auto mapping = parse_port_mapping(segment);
-        if (!mapping)
-            return std::unexpected(Error{TunnelErrc::invalid_mapping,
-                                         "invalid mapping: " + std::string(segment)});
+        if (!mapping) {
+            return std::unexpected(Error{.errc=TunnelErrc::invalid_mapping,
+                                         .context="invalid mapping: " + std::string(segment)});
+        }
         mappings.push_back(*mapping);
-        if (comma == std::string_view::npos)
+        if (comma == std::string_view::npos) {
             break;
+        }
         list.remove_prefix(comma + 1);
     }
     return mappings;
@@ -27,19 +29,21 @@ std::expected<std::vector<PortMapping>, Error> parse_mapping_list(std::string_vi
 
 std::expected<std::vector<PortMapping>, Error> parse_mapping_file(const std::filesystem::path& file_path) {
     std::ifstream file(file_path);
-    if (!file)
-        return std::unexpected(Error{TunnelErrc::file_open_failed,
-                                     "cannot open " + file_path.string()});
-
+    if (!file) {
+        return std::unexpected(Error{.errc=TunnelErrc::file_open_failed,
+                                     .context="cannot open " + file_path.string()});
+    }
     std::vector<PortMapping> mappings;
     std::string line;
     while (std::getline(file, line)) {
-        if (line.empty())
+        if (line.empty()) {
             continue;
+        }
         auto mapping = parse_port_mapping(line);
-        if (!mapping)
-            return std::unexpected(Error{TunnelErrc::invalid_mapping,
-                                         "invalid mapping: " + line});
+        if (!mapping) {
+            return std::unexpected(Error{.errc=TunnelErrc::invalid_mapping,
+                                         .context="invalid mapping: " + line});
+        }
         mappings.push_back(*mapping);
     }
     return mappings;
@@ -71,7 +75,7 @@ std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const c
     try {
         program.parse_args(argc, argv);
     } catch (const std::exception& err) {
-        return std::unexpected(Error{TunnelErrc::invalid_arguments, err.what()});
+        return std::unexpected(Error{.errc=TunnelErrc::invalid_arguments, .context=err.what()});
     }
 
     ClientConfig config;
@@ -84,22 +88,25 @@ std::expected<ClientConfig, Error> parse_mapping_configuration(int argc, const c
 
     if (auto file_path = program.present("-f")) {
         auto file_mappings = parse_mapping_file(*file_path);
-        if (!file_mappings)
+        if (!file_mappings) {
             return std::unexpected(std::move(file_mappings).error().with("parsing --file"));
+        }
         config.mappings.insert(config.mappings.end(),
                                file_mappings->begin(), file_mappings->end());
     }
 
     if (auto list = program.present("-l")) {
         auto list_mappings = parse_mapping_list(*list);
-        if (!list_mappings)
+        if (!list_mappings) {
             return std::unexpected(std::move(list_mappings).error().with("parsing --list"));
+        }
         config.mappings.insert(config.mappings.end(),
                                list_mappings->begin(), list_mappings->end());
     }
 
-    if (config.mappings.empty())
-        return std::unexpected(Error{TunnelErrc::empty_mapping, "no port mappings provided"});
+    if (config.mappings.empty()) {
+        return std::unexpected(Error{.errc=TunnelErrc::empty_mapping, .context="no port mappings provided"});
+    }
 
     return config;
 }

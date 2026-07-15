@@ -1,6 +1,6 @@
 #pragma once
 
-#include <string_view>
+#include <string>
 #include <span>
 #include <optional>
 #include <unordered_map>
@@ -10,7 +10,7 @@
 
 class Client {
 public:
-    Client(std::string_view addr_string, std::span<const PortMapping> mappings);
+    Client(const std::string& addr_string, std::span<const PortMapping> mappings);
     std::optional<Error> send_mapping_message();
 
 private:

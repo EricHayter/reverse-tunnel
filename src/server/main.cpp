@@ -1,5 +1,6 @@
 #include <csignal>
 #include <iostream>
+#include <exception>
 
 #include <argparse/argparse.hpp>
 #include "spdlog/spdlog.h"
@@ -17,9 +18,9 @@ int main(int argc, const char** argv) {
         program.parse_args(argc, argv);
     }
     catch (const std::exception& err) {
-        std::cerr << err.what() << std::endl;
+        std::cerr << err.what() << '\n';
         std::cerr << program;
-        std::exit(1);
+        return 1;
     }
 
     if (program["--verbose"] == true) {

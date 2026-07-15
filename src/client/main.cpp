@@ -9,7 +9,7 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    Client client{ config->ip_addr, config->mappings };
+    const Client client{ config->ip_addr, config->mappings };
 
     return 0;
 }

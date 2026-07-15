@@ -1,5 +1,8 @@
 #include "common/error.h"
 
+#include <string_view>
+#include <utility>
+
 Error Error::with(std::string_view extra_context) && {
     context.insert(0, std::string(extra_context) + ": ");
     return std::move(*this);

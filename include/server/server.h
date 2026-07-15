@@ -11,7 +11,7 @@
 
 class Server {
 public:
-    Server(std::size_t num_workers);
+    explicit Server(std::size_t num_workers);
 private:
     std::expected<int, Error> init_listening_socket();
 

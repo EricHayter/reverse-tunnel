@@ -3,9 +3,8 @@
 #include "spdlog/spdlog.h"
 
 SocketMonitor::SocketMonitor()
+    : epoll_fd_m(epoll_create1(EPOLL_FLAGS))
 {
-    constexpr int EPOLL_FLAGS = 0x00;
-    epoll_fd_m = epoll_create1(EPOLL_FLAGS);
     if (epoll_fd_m == -1) {
         throw std::runtime_error("Failed to initialize epoll instance in socket monitor");
     }
@@ -16,8 +15,8 @@ SocketMonitor::SocketMonitor()
 
 epoll_event SocketMonitor::create_listener_event(int socket_fd)
 {
-    epoll_event event;
-    event.events =  LISTENER_EVENTS | EPOLL_FLAGS;
+    epoll_event event{};
+    event.events =  LISTENER_EVENTS | static_cast<uint32_t>(EPOLL_FLAGS);
     event.data.fd = socket_fd;
     return event;
 }
@@ -54,12 +53,12 @@ std::optional<Error> SocketMonitor::rearm(epoll_event event)
     return std::nullopt;
 }
 
-std::optional<epoll_event> SocketMonitor::pull_event(std::stop_token st)
+std::optional<epoll_event> SocketMonitor::pull_event(const std::stop_token& stop_token)
 {
-    std::stop_callback callback(st, [](){
+    std::stop_callback callback(stop_token, [](){
         spdlog::debug("Stop requested. Preempting block.");
     });
-    return event_queue_m.pop(st);
+    return event_queue_m.pop(stop_token);
 }
 
 SocketMonitor::~SocketMonitor()
@@ -67,24 +66,25 @@ SocketMonitor::~SocketMonitor()
     listener_thread_m.request_stop();
 }
 
-void SocketMonitor::monitor_job(std::stop_token stop_token)
+void SocketMonitor::monitor_job(const std::stop_token& stop_token)
 {
     // introduce a number of threads that we run at a time as a constant
     constexpr int TIMEOUT_MS = 1000;
     constexpr int MAX_EVENTS = 4;
-    std::array<epoll_event, MAX_EVENTS> events;
+    std::array<epoll_event, MAX_EVENTS> events{};
     while (!stop_token.stop_requested()) {
         int num_events = epoll_wait(epoll_fd_m, events.data(), MAX_EVENTS, TIMEOUT_MS);
         if (num_events < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR) {
+                continue;
+            }
             // TODO find a way to handle this nicely? Need some communication
             // between this thread and everything else
             // something has gone horribly wrong
             return;
         }
-        for (int i{ }; i < num_events; ++i) {
-            event_queue_m.push(events[i]);
+        for (int i{ }; i < std::max(num_events, MAX_EVENTS); ++i) {
+            event_queue_m.push(events[i]); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
         }
     }
-    close(epoll_fd_m);
 }
