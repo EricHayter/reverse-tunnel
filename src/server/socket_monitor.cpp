@@ -22,7 +22,7 @@ epoll_event SocketMonitor::create_listener_event(int socket_fd)
 }
 
 
-std::optional<Error> SocketMonitor::subscribe(epoll_event event)
+std::optional<Error> SocketMonitor::subscribe(epoll_event event) const
 {
     assert((event.events & EPOLLET) && (event.events & EPOLLONESHOT));
     int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_ADD, event.data.fd, &event);
@@ -43,7 +43,7 @@ void SocketMonitor::unsubscribe(epoll_event event) const
     assert(err != -1);
 }
 
-std::optional<Error> SocketMonitor::rearm(epoll_event event)
+std::optional<Error> SocketMonitor::rearm(epoll_event event) const
 {
     event.events |= EPOLLET | EPOLLONESHOT;
     int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_MOD, event.data.fd, &event);
@@ -64,6 +64,7 @@ std::optional<epoll_event> SocketMonitor::pull_event(const std::stop_token& stop
 SocketMonitor::~SocketMonitor()
 {
     listener_thread_m.request_stop();
+    close(epoll_fd_m);
 }
 
 void SocketMonitor::monitor_job(const std::stop_token& stop_token)

@@ -25,7 +25,7 @@ private:
 
     /* Handles a read event on a passive socket (i.e. an connection request)
      * subscribes the new connection to EPOLL_IN events */
-    std::expected<FileDescriptor, Error> accept_connection(int listener_socket_fd);
+    std::expected<int, Error> accept_connection(int listener_socket_fd);
 
     /* Handles the initial message from the client indicating the desired
      * mappings, and creates listening sockets for ingress packets with
@@ -34,7 +34,7 @@ private:
 
     /* Creates a socket add calls listen on it. Also subscribes for read EPOLLIN
      * events on the socket monitor */
-    std::expected<FileDescriptor, Error> create_listening_socket(PortNum port_num);
+    std::expected<int, Error> create_listening_socket(PortNum port_num);
 
 
     /* IMPORTANT!
@@ -47,7 +47,7 @@ private:
     void worker_func(const std::stop_token& stop_token);
 
     // special case when handling here (since this is where our management occurs I guess)
-    FileDescriptor client_listener_sock_fd_m; // TODO might not need this
+    int client_listener_sock_fd_m; // TODO might not need this
     std::unordered_set<int> client_socks_fd_m; // this should realistically be a vector
 
     // stores from-to port mappings

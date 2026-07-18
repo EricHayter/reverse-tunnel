@@ -21,7 +21,6 @@
 
 #include "common/locking_queue.h"
 #include "common/error.h"
-#include "common/file_descriptor.h"
 
 class SocketMonitor {
 public:
@@ -50,7 +49,7 @@ public:
 
     /* Subscribe to a given file descriptor for events. Events on this file
      * descriptor will be pushed to event_queue */
-    std::optional<Error> subscribe(epoll_event event);
+    std::optional<Error> subscribe(epoll_event event) const;
 
     void unsubscribe(epoll_event event) const;
 
@@ -59,13 +58,13 @@ public:
      * EPOLLONESHOT which prevents new events from being created without
      * "re-arming" an event. Therefore we need to explicitly declare when
      * an event has been handled */
-    std::optional<Error> rearm(epoll_event event);
+    std::optional<Error> rearm(epoll_event event) const;
 
     std::optional<epoll_event> pull_event(const std::stop_token& stop_token);
 private:
     void monitor_job(const std::stop_token& stop_token);
 
     Queue<epoll_event> event_queue_m;
-    FileDescriptor epoll_fd_m;
+    int epoll_fd_m;
     std::jthread listener_thread_m;
 };

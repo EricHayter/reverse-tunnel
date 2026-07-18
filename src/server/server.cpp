@@ -26,13 +26,13 @@ Server::Server(std::size_t num_workers)
     if (!listener_socket_expected) {
         throw std::runtime_error(listener_socket_expected.error().context);
     }
-    client_listener_sock_fd_m = std::move(*listener_socket_expected);
+    client_listener_sock_fd_m = *listener_socket_expected;
 }
 
 
-std::expected<FileDescriptor, Error> Server::create_listening_socket(PortNum port_num)
+std::expected<int, Error> Server::create_listening_socket(PortNum port_num)
 {
-    FileDescriptor listening_socket_fd = FileDescriptor(socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0x00));
+    int listening_socket_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0x00);
     if (listening_socket_fd == -1) {
         return std::unexpected<Error>{{ .context = "Failed to create a receiving socket" }};
     }
@@ -70,7 +70,7 @@ std::expected<FileDescriptor, Error> Server::create_listening_socket(PortNum por
     spdlog::info("Listening for external connections on {}:{} (socket fd {})",
             get_addr_string(local_in),
             port_num,
-            int(listening_socket_fd)
+            listening_socket_fd
             );
 
     return listening_socket_fd;
@@ -148,7 +148,7 @@ void Server::handle_read_event(int socket_fd)
     num_bytes = recv(socket_fd, data_span.data(), data_span.size_bytes(), 0x00);
     if (num_bytes == -1) {
         // TODO this should return an error I think?
-        spdlog::error("recv call failed: {}", strerror(errno));
+        spdlog::error("recv call failed: {}", strerror(errno)); // NOLINT(concurrency-mt-unsafe)
     }
     assert(num_bytes != -1); // TODO this can fail for non assert types of stuff
 
@@ -202,19 +202,19 @@ Error Server::handle_client_init(int socket_fd)
     return {};
 }
 
-std::expected<FileDescriptor,Error> Server::accept_connection(int listener_socket_fd)
+std::expected<int, Error> Server::accept_connection(int listener_socket_fd)
 {
     sockaddr_storage addr{};
     unsigned int addr_len{ sizeof(addr) };
 
-    auto new_conn_socket_fd = FileDescriptor(accept(listener_socket_fd, reinterpret_cast<sockaddr*>(&addr), &addr_len)); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    int new_conn_socket_fd = accept(listener_socket_fd, reinterpret_cast<sockaddr*>(&addr), &addr_len); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     if (new_conn_socket_fd == -1) {
         return std::unexpected{Error{ .context = "Call to accept() failed" }};
     }
 
     spdlog::debug("Accepted connection from {} (socket fd {})",
             get_addr_string(*reinterpret_cast<sockaddr_in*>(&addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-            int(new_conn_socket_fd)
+            new_conn_socket_fd
             );
 
     // subscribe it and save it
