@@ -25,7 +25,7 @@ Client::Client(const std::string& addr_string, std::span<const PortMapping> mapp
     addrinfo *server_info{};
 
     int res =  getaddrinfo(addr_string.c_str(),
-        SERVER_LISTENING_PORTNUM.data(),
+        std::to_string(SERVER_LISTENING_PORTNUM).c_str(),
         &hints,
         &server_info
     );
@@ -69,9 +69,11 @@ std::optional<Error> Client::send_mapping_message()
 
     // serializing the mappings_m
     for (const auto& [from_port, to_port]: mappings_m) {
-        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &from_port, sizeof(from_port));
+        PortNum from_port_network = htons(from_port);
+        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &from_port_network, sizeof(from_port_network));
         offset += sizeof(from_port);
-        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &to_port, sizeof(to_port));
+        PortNum to_port_network = htons(to_port);
+        std::memcpy(std::span(msg_buffer).subspan(offset).data(), &to_port_network, sizeof(to_port_network));
         offset += sizeof(to_port);
     }
 

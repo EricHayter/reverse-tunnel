@@ -1,16 +1,19 @@
 #include "common/file_descriptor.h"
 
+#include "spdlog/spdlog.h"
 #include <cassert>
 #include <unistd.h>
 
 FileDescriptor::FileDescriptor(int file_descriptor)
-    : file_descriptor_m{ file_descriptor }
+    : owning_m{ true }
+    , file_descriptor_m{ file_descriptor }
 {
 }
 
 FileDescriptor::~FileDescriptor()
 {
     if (owning_m) {
+        spdlog::debug("Closing fd {}", file_descriptor_m);
         close(file_descriptor_m);
     }
 }

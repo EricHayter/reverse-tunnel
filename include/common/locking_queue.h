@@ -24,8 +24,8 @@ public:
      * return a std::nullopt */
     std::optional<T> pop(const std::stop_token& stop_token);
 private:
-    std::unique_ptr<std::mutex> mut_m;
-    std::unique_ptr<std::condition_variable_any> cond_m;
+    std::unique_ptr<std::mutex> mut_m{ std::make_unique<std::mutex>() };
+    std::unique_ptr<std::condition_variable_any> cond_m{ std::make_unique<std::condition_variable_any>() };
     std::queue<T> queue_m;
 };
 

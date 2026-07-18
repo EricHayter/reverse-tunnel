@@ -3,12 +3,12 @@
 #include "spdlog/spdlog.h"
 
 SocketMonitor::SocketMonitor()
-    : epoll_fd_m(epoll_create1(EPOLL_FLAGS))
+    : epoll_fd_m(epoll_create1(0x00))
 {
     if (epoll_fd_m == -1) {
         throw std::runtime_error("Failed to initialize epoll instance in socket monitor");
     }
-
+    spdlog::debug("Initialized epoll instance with fd {}", int(epoll_fd_m));
     listener_thread_m = std::jthread(&SocketMonitor::monitor_job, this);
 }
 
@@ -83,7 +83,7 @@ void SocketMonitor::monitor_job(const std::stop_token& stop_token)
             // something has gone horribly wrong
             return;
         }
-        for (int i{ }; i < std::max(num_events, MAX_EVENTS); ++i) {
+        for (int i{ }; i < std::min(num_events, MAX_EVENTS); ++i) {
             event_queue_m.push(events[i]); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
         }
     }
