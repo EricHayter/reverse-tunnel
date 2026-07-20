@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <netdb.h>
 
 #include "spdlog/spdlog.h"
@@ -17,7 +18,7 @@
 
 Server::Server(std::size_t num_workers)
 {
-    workers_m.resize(num_workers);
+    workers_m.reserve(num_workers);
     for (std::size_t i{}; i < num_workers; ++i) {
         workers_m.emplace_back(&Server::worker_func, this);
     }
@@ -51,41 +52,41 @@ std::expected<int, Error> Server::create_listening_socket(PortNum port_num)
 
     errc = bind(listening_socket, local_addr->ai_addr, local_addr->ai_addrlen);
     if (errc == -1) {
+        freeaddrinfo(local_addr);
         return std::unexpected<Error>{{ .context = "Failed to bind to address" }};
     }
 
     constexpr int BACKLOG_COUNT = 20;
     errc = listen(listening_socket, BACKLOG_COUNT);
     if (errc == -1) {
+        freeaddrinfo(local_addr);
         return std::unexpected<Error>{{ .context = "Call to listen() failed" }};
     }
 
-    listening_sockets_m.insert(listening_socket);
+    listening_sockets_m[listening_socket] = port_num;
 
-    // is this not out of order???? with the stuff above?
-    auto listener_subscribe_failure = sock_monitor_m.subscribe(SocketMonitor::create_listener_event(listening_socket));
+    auto listener_subscribe_failure = socket_monitor_m.subscribe(SocketMonitor::create_listener_event(listening_socket));
     if (listener_subscribe_failure) {
+        freeaddrinfo(local_addr);
         return std::unexpected(*listener_subscribe_failure);
     }
 
-    sockaddr_in local_in{};
-    std::memcpy(&local_in, local_addr->ai_addr, sizeof(local_in));
     spdlog::info("Listening for external connections on {}:{} (socket fd {})",
-            get_addr_string(local_in),
+            get_addr_string(*reinterpret_cast<sockaddr_in*>(local_addr->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
             port_num,
             listening_socket
             );
 
-
+    freeaddrinfo(local_addr);
     return listening_socket;
 }
 
 
 void Server::worker_func(const std::stop_token& stop_token)
 {
-    // TODO this could be fixed in theory...
+    // TODO this could be fixed in theory... Since these aren't enums... it's a bitfield
     while (!stop_token.stop_requested()) {
-        auto event = sock_monitor_m.pull_event(stop_token);
+        auto event = socket_monitor_m.pull_event(stop_token);
         if (event) {
             int notified_socket = event->data.fd;
             switch (event->events) {
@@ -114,45 +115,51 @@ void Server::worker_func(const std::stop_token& stop_token)
 void Server::handle_read_event(int socket)
 {
     /* receiving message from clients (message mapping)  */
-    if (client_socks_fd_m.contains(socket)) {
+    if (client_sockets_m.contains(socket)) {
         handle_client_init(socket);
         return;
     }
 
     /* new connection connection events */
     if (listening_sockets_m.contains(socket)) {
-        auto connection_result = accept_connection(socket);
-        if (!connection_result) {
+        auto new_connection = accept_connection(socket);
+        if (!new_connection) {
             spdlog::error("Connection acceptance failed on socket fd {}", socket);
             return;
         }
 
+        const auto&[new_socket, addr] = *new_connection;
+
         /* special case: this is a client connection, we should make note of
          * these so we can expect a handshake message, see case above */
         if (socket == client_listener_socket_m) {
-               client_socks_fd_m.insert(socket);
+            client_sockets_m[new_socket] = addr;
+        } else {
+            PortNum to_port = listening_sockets_m.at(socket);
+            const sockaddr_in& peer_addr = client_socket_address_m.at(to_port);
+            auto outbound_socket = create_connection(peer_addr);
+            if (!outbound_socket) {
+                spdlog::error(outbound_socket.error().context);
+                close(new_socket);
+                return;
+            }
+            inbound_to_outbound_m[new_socket] = *outbound_socket;
+            outbound_to_inbound_m[*outbound_socket] = new_socket;
         }
         return;
     }
 
-
     /* just a message that needs to be forwarded */
-    constexpr int MSG_BUFFER_SIZE = 4096;
+    constexpr int MSG_BUFFER_SIZE = 1024;
     std::array<std::byte, MSG_BUFFER_SIZE> msg_buffer{};
     ssize_t num_bytes{};
-    std::span<std::byte> data_span = std::span(msg_buffer).subspan(sizeof(socket) + sizeof(num_bytes));
-    num_bytes = recv(socket, data_span.data(), data_span.size_bytes(), 0x00);
+    num_bytes = recv(socket, msg_buffer.data(), msg_buffer.size(), 0x00);
     if (num_bytes == -1) {
         // TODO this should return an error I think?
         spdlog::error("recv call failed: {}", strerror(errno)); // NOLINT(concurrency-mt-unsafe)
     }
     assert(num_bytes != -1); // TODO this can fail for non assert types of stuff
-
-    std::memcpy(msg_buffer.data(), &socket, sizeof(socket));
-    std::memcpy(std::span(msg_buffer).subspan(sizeof(socket)).data(), &num_bytes, sizeof(num_bytes));
-
-    // TODO can't have this hardcoded to the client sock when we have multiple clients (it'll need the bijective mapping later)
-    // send_bytes(client_sock_fd_m, std::span(msg_buffer).subspan(0, sizeof(socket_fd) + sizeof(num_bytes) + num_bytes));
+    send_bytes(inbound_to_outbound_m[socket], std::span(msg_buffer).subspan(0, num_bytes));
 }
 
 Error Server::handle_client_init(int socket)
@@ -180,16 +187,18 @@ Error Server::handle_client_init(int socket)
             return Error{ .context = "Failed to read number of mappings" };
         }
 
-        PortNum to_port = read_net_u16(std::span(buffer).subspan(0, sizeof(uint16_t)));
-        PortNum from_port = read_net_u16(std::span(buffer).subspan(sizeof(uint16_t), sizeof(uint16_t)));
+        PortNum from_port = read_net_u16(std::span(buffer).subspan(0, sizeof(uint16_t)));
+        PortNum to_port = read_net_u16(std::span(buffer).subspan(sizeof(uint16_t), sizeof(uint16_t)));
         PortMapping port_mapping{ from_port, to_port };
 
-        // mapping log stuff here...
         port_map_m[from_port] = to_port;
         mappings_processed++;
         spdlog::debug("Received port mapping #{}: {}", mappings_processed, to_string(port_mapping));
 
-        /* create the listening socket to accept egress connections */
+        sockaddr_in data_addr = client_sockets_m.at(socket);
+        data_addr.sin_port = htons(from_port);
+        client_socket_address_m[to_port] = data_addr;
+
         auto listening_socket = create_listening_socket(to_port);
         if (!listening_socket) {
             return listening_socket.error().with(std::format("Failed to setup listening socket on port {}", to_port));
@@ -198,22 +207,39 @@ Error Server::handle_client_init(int socket)
     return {};
 }
 
-std::expected<int, Error> Server::accept_connection(int listening_socket)
+std::expected<std::pair<int, sockaddr_in>, Error> Server::accept_connection(int listening_socket)
 {
-    sockaddr_storage addr{};
-    unsigned int addr_len{ sizeof(addr) };
+    sockaddr_in socket_address{};
+    socklen_t addr_len{ sizeof(socket_address) };
 
-    int new_socket = accept(listening_socket, reinterpret_cast<sockaddr*>(&addr), &addr_len); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+    int new_socket = accept(listening_socket, reinterpret_cast<sockaddr*>(&socket_address), &addr_len); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
     if (new_socket == -1) {
         return std::unexpected{Error{ .context = "Call to accept() failed" }};
     }
 
     spdlog::debug("Accepted connection from {} (socket fd {})",
-            get_addr_string(*reinterpret_cast<sockaddr_in*>(&addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+            get_addr_string(socket_address),
             new_socket
             );
 
-    // subscribe it and save it
-    sock_monitor_m.subscribe(SocketMonitor::create_listener_event(new_socket));
+    socket_monitor_m.subscribe(SocketMonitor::create_listener_event(new_socket));
+    return std::pair{ new_socket, socket_address };
+}
+
+std::expected<int, Error> Server::create_connection(const sockaddr_in& client_addr_info)
+{
+    int new_socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0x00);
+    if (new_socket == -1) {
+        return std::unexpected(Error{ .context = std::format("Failed to create a socket: {}", strerror(errno)) }); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    spdlog::debug("Attempting to connect to {}", get_addr_string(client_addr_info));
+
+    if (connect(new_socket, reinterpret_cast<const sockaddr*>(&client_addr_info), sizeof(client_addr_info)) == -1) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
+        return std::unexpected(Error{ .context = std::format("Connection attempt failed: {}", strerror(errno)) }); // NOLINT(concurrency-mt-unsafe)
+    }
+
+    spdlog::debug("Successfully connected to {}", get_addr_string(client_addr_info));
+
     return new_socket;
 }
