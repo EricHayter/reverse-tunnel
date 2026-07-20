@@ -8,24 +8,18 @@ SocketMonitor::SocketMonitor()
     if (epoll_fd_m == -1) {
         throw std::runtime_error("Failed to initialize epoll instance in socket monitor");
     }
-    spdlog::debug("Initialized epoll instance with fd {}", int(epoll_fd_m));
+    spdlog::debug("Initialized epoll instance with fd {}", epoll_fd_m);
     listener_thread_m = std::jthread(&SocketMonitor::monitor_job, this);
 }
 
 
-epoll_event SocketMonitor::create_listener_event(int socket_fd)
+static std::optional<Error> epoll_add(int epoll_fd, int socket_fd, uint32_t event_mask)
 {
     epoll_event event{};
-    event.events =  LISTENER_EVENTS | static_cast<uint32_t>(EPOLL_FLAGS);
+    event.events = event_mask;
     event.data.fd = socket_fd;
-    return event;
-}
 
-
-std::optional<Error> SocketMonitor::subscribe(epoll_event event) const
-{
-    assert((event.events & EPOLLET) && (event.events & EPOLLONESHOT));
-    int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_ADD, event.data.fd, &event);
+    int err = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event);
     if (err == -1) {
         switch (errno) {
         case EEXIST:
@@ -37,23 +31,53 @@ std::optional<Error> SocketMonitor::subscribe(epoll_event event) const
     return std::nullopt;
 }
 
-void SocketMonitor::unsubscribe(epoll_event event) const
+static std::optional<Error> epoll_mod(int epoll_fd, int socket_fd, uint32_t event_mask)
 {
-    int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_DEL, event.data.fd, nullptr);
-    assert(err != -1);
-}
+    epoll_event event{};
+    event.events = event_mask;
+    event.data.fd = socket_fd;
 
-std::optional<Error> SocketMonitor::rearm(epoll_event event) const
-{
-    event.events |= EPOLLET | EPOLLONESHOT;
-    int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_MOD, event.data.fd, &event);
+    int err = epoll_ctl(epoll_fd, EPOLL_CTL_MOD, socket_fd, &event);
     if (err == -1) {
         return Error{ .context = "Failed to rearm event" };
     }
     return std::nullopt;
 }
 
-std::optional<epoll_event> SocketMonitor::pull_event(const std::stop_token& stop_token)
+std::optional<Error> SocketMonitor::subscribe_reader(int socket_fd) const
+{
+    return epoll_add(epoll_fd_m, socket_fd, READER_EVENTS | EPOLL_FLAGS);
+}
+
+std::optional<Error> SocketMonitor::rearm_reader(int socket_fd) const
+{
+    return epoll_mod(epoll_fd_m, socket_fd, READER_EVENTS | EPOLL_FLAGS);
+}
+
+std::optional<Error> SocketMonitor::subscribe_sender(int socket_fd) const
+{
+    return epoll_add(epoll_fd_m, socket_fd, SENDER_EVENTS | EPOLL_FLAGS);
+}
+
+std::optional<Error> SocketMonitor::rearm_sender(int socket_fd) const
+{
+    return epoll_mod(epoll_fd_m, socket_fd, SENDER_EVENTS | EPOLL_FLAGS);
+}
+
+void SocketMonitor::unsubscribe(int socket_fd) const
+{
+    int err = epoll_ctl(epoll_fd_m, EPOLL_CTL_DEL, socket_fd, nullptr);
+    assert(err != -1);
+}
+
+SocketMonitor::Event SocketMonitor::classify_event(uint32_t events)
+{
+    if ((events & EPOLLHUP) != 0U) { return SocketMonitor::Event::HangUp; }
+    if ((events & EPOLLERR) != 0U) { return SocketMonitor::Event::Error; }
+    return SocketMonitor::Event::Read;
+}
+
+std::optional<std::pair<int, SocketMonitor::Event>> SocketMonitor::pull_event(const std::stop_token& stop_token)
 {
     std::stop_callback callback(stop_token, [](){
         spdlog::debug("Stop requested. Preempting block.");
@@ -69,7 +93,6 @@ SocketMonitor::~SocketMonitor()
 
 void SocketMonitor::monitor_job(const std::stop_token& stop_token)
 {
-    // introduce a number of threads that we run at a time as a constant
     constexpr int TIMEOUT_MS = 1000;
     constexpr int MAX_EVENTS = 4;
     std::array<epoll_event, MAX_EVENTS> events{};
@@ -79,13 +102,11 @@ void SocketMonitor::monitor_job(const std::stop_token& stop_token)
             if (errno == EINTR) {
                 continue;
             }
-            // TODO find a way to handle this nicely? Need some communication
-            // between this thread and everything else
-            // something has gone horribly wrong
             return;
         }
         for (int i{ }; i < std::min(num_events, MAX_EVENTS); ++i) {
-            event_queue_m.push(events[i]); // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+            const epoll_event& epoll_ev = events[i]; // NOLINT(cppcoreguidelines-pro-bounds-constant-array-index)
+            event_queue_m.push({ epoll_ev.data.fd, classify_event(epoll_ev.events) });
         }
     }
 }

@@ -16,6 +16,7 @@
  */
 
 #include <thread>
+#include <utility>
 
 #include <sys/epoll.h>
 
@@ -24,6 +25,12 @@
 
 class SocketMonitor {
 public:
+    enum class Event : uint8_t {
+        Read   = EPOLLIN,
+        HangUp = EPOLLHUP,
+        Error  = EPOLLERR,
+    };
+
     /* Creates an instance of a socket monitor. Events that occur on the
      * file descriptors that have been subscribed to will be pushed to the
      * event_queue */
@@ -36,35 +43,31 @@ public:
     SocketMonitor& operator=(SocketMonitor&& other) noexcept = default;
     SocketMonitor(SocketMonitor&& other) noexcept = default;
 
+    [[nodiscard]] std::optional<Error> subscribe_reader(int socket_fd) const;
+    [[nodiscard]] std::optional<Error> rearm_reader(int socket_fd) const;
 
+    [[nodiscard]] std::optional<Error> subscribe_sender(int socket_fd) const;
+    [[nodiscard]] std::optional<Error> rearm_sender(int socket_fd) const;
 
-    static constexpr int EPOLL_FLAGS  = EPOLLET | EPOLLONESHOT;
-
-    // helper function for creating an epoll event for listeners
-    static epoll_event create_listener_event(int socket_fd);
-    static constexpr unsigned int LISTENER_EVENTS = EPOLLIN | EPOLLERR | EPOLLHUP;
-
-
-    // TODO maybe implement moving stuff later
-
-    /* Subscribe to a given file descriptor for events. Events on this file
-     * descriptor will be pushed to event_queue */
-    std::optional<Error> subscribe(epoll_event event) const;
-
-    void unsubscribe(epoll_event event) const;
+    void unsubscribe(int socket_fd) const;
 
     /* To prevent possible race conditions where multiple threads could get
      * an event on the same file descriptor the Socket Monitor uses
      * EPOLLONESHOT which prevents new events from being created without
      * "re-arming" an event. Therefore we need to explicitly declare when
      * an event has been handled */
-    std::optional<Error> rearm(epoll_event event) const;
 
-    std::optional<epoll_event> pull_event(const std::stop_token& stop_token);
+    std::optional<std::pair<int, Event>> pull_event(const std::stop_token& stop_token);
 private:
+    static constexpr uint32_t EPOLL_FLAGS     = EPOLLET | EPOLLONESHOT;
+    static constexpr uint32_t READER_EVENTS   = EPOLLIN | EPOLLERR | EPOLLHUP;
+    static constexpr uint32_t SENDER_EVENTS   = EPOLLERR | EPOLLHUP;
+
+    static Event classify_event(uint32_t events);
+
     void monitor_job(const std::stop_token& stop_token);
 
-    Queue<epoll_event> event_queue_m;
+    Queue<std::pair<int, Event>> event_queue_m;
     int epoll_fd_m;
     std::jthread listener_thread_m;
 };

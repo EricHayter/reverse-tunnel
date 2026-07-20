@@ -65,7 +65,7 @@ std::expected<int, Error> Server::create_listening_socket(PortNum port_num)
 
     listening_sockets_m[listening_socket] = port_num;
 
-    auto listener_subscribe_failure = socket_monitor_m.subscribe(SocketMonitor::create_listener_event(listening_socket));
+    auto listener_subscribe_failure = socket_monitor_m.subscribe_reader(listening_socket);
     if (listener_subscribe_failure) {
         freeaddrinfo(local_addr);
         return std::unexpected(*listener_subscribe_failure);
@@ -88,24 +88,20 @@ void Server::worker_func(const std::stop_token& stop_token)
     while (!stop_token.stop_requested()) {
         auto event = socket_monitor_m.pull_event(stop_token);
         if (event) {
-            int notified_socket = event->data.fd;
-            switch (event->events) {
-            case EPOLLIN: {
-                spdlog::debug("Handling read event on fd {}", notified_socket);
-                handle_read_event(event->data.fd);
+            auto [socket_fd, socket_event] = *event;
+            switch (socket_event) {
+            case SocketMonitor::Event::Read: {
+                spdlog::debug("Handling read event on fd {}", socket_fd);
+                handle_read_event(socket_fd);
                 break;
             }
-            case EPOLLHUP: {
-                spdlog::debug("Handling hang-up event on fd {}", notified_socket);
+            case SocketMonitor::Event::HangUp: {
+                spdlog::debug("Handling hang-up event on fd {}", socket_fd);
                 break;
             }
-            case EPOLLERR: {
-                spdlog::debug("Handling error event on fd {}", notified_socket);
+            case SocketMonitor::Event::Error: {
+                spdlog::debug("Handling error event on fd {}", socket_fd);
                 break;
-            }
-            default: {
-                std::unreachable();
-                assert(false);
             }
             }
         }
@@ -222,7 +218,9 @@ std::expected<std::pair<int, sockaddr_in>, Error> Server::accept_connection(int 
             new_socket
             );
 
-    socket_monitor_m.subscribe(SocketMonitor::create_listener_event(new_socket));
+    if (auto err = socket_monitor_m.subscribe_reader(new_socket)) {
+        return std::unexpected(*err);
+    }
     return std::pair{ new_socket, socket_address };
 }
 
