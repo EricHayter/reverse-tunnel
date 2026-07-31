@@ -65,7 +65,7 @@ std::expected<int, Error> Server::create_listening_socket(PortNum port_num)
 
     listening_sockets_m[listening_socket] = port_num;
 
-    auto listener_subscribe_failure = socket_monitor_m.subscribe_reader(listening_socket);
+    auto listener_subscribe_failure = socket_monitor_m.arm(listening_socket, SocketMonitor::Interest::Read);
     if (listener_subscribe_failure) {
         freeaddrinfo(local_addr);
         return std::unexpected(*listener_subscribe_failure);
@@ -95,6 +95,10 @@ void Server::worker_func(const std::stop_token& stop_token)
                 handle_read_event(socket_fd);
                 break;
             }
+            case SocketMonitor::Event::Write: {
+                spdlog::debug("Handling write event on fd {}", socket_fd);
+                break;
+            }
             case SocketMonitor::Event::HangUp: {
                 spdlog::debug("Handling hang-up event on fd {}", socket_fd);
                 break;
@@ -112,53 +116,70 @@ void Server::handle_read_event(int socket)
 {
     /* receiving message from clients (message mapping)  */
     if (client_sockets_m.contains(socket)) {
-        handle_client_init(socket);
-        return;
-    }
-
-    /* new connection connection events */
-    if (listening_sockets_m.contains(socket)) {
+        handle_client_mapping_message(socket);
+    /* new connection attempt */
+    } else if (listening_sockets_m.contains(socket)) {
         auto new_connection = accept_connection(socket);
         if (!new_connection) {
             spdlog::error("Connection acceptance failed on socket fd {}", socket);
             return;
         }
 
-        const auto&[new_socket, addr] = *new_connection;
+        const auto&[ingress_socket, addr] = *new_connection;
 
         /* special case: this is a client connection, we should make note of
          * these so we can expect a handshake message, see case above */
         if (socket == client_listener_socket_m) {
-            client_sockets_m[new_socket] = addr;
+            client_sockets_m[ingress_socket] = addr;
         } else {
-            PortNum to_port = listening_sockets_m.at(socket);
-            const sockaddr_in& peer_addr = client_socket_address_m.at(to_port);
-            auto outbound_socket = create_connection(peer_addr);
-            if (!outbound_socket) {
-                spdlog::error(outbound_socket.error().context);
-                close(new_socket);
+            PortNum ingress_port = listening_sockets_m.at(socket);
+            const sockaddr_in& peer_addr = ingress_port_to_destination_m.at(ingress_port);
+            auto egress_socket = create_connection(peer_addr);
+            if (!egress_socket) {
+                spdlog::error(egress_socket.error().context);
+                close(ingress_socket);
                 return;
             }
-            inbound_to_outbound_m[new_socket] = *outbound_socket;
-            outbound_to_inbound_m[*outbound_socket] = new_socket;
+            auto connection_iter = connections_m.emplace(
+                connections_m.end(),
+                ingress_socket,
+                *egress_socket
+            );
+            socket_to_conn_m[ingress_socket] = connection_iter;
+            socket_to_conn_m[*egress_socket] = connection_iter;
         }
-        return;
+    } else {
     }
-
-    /* just a message that needs to be forwarded */
-    constexpr int MSG_BUFFER_SIZE = 1024;
-    std::array<std::byte, MSG_BUFFER_SIZE> msg_buffer{};
-    ssize_t num_bytes{};
-    num_bytes = recv(socket, msg_buffer.data(), msg_buffer.size(), 0x00);
-    if (num_bytes == -1) {
-        // TODO this should return an error I think?
-        spdlog::error("recv call failed: {}", strerror(errno)); // NOLINT(concurrency-mt-unsafe)
-    }
-    assert(num_bytes != -1); // TODO this can fail for non assert types of stuff
-    send_bytes(inbound_to_outbound_m[socket], std::span(msg_buffer).subspan(0, num_bytes));
 }
 
-Error Server::handle_client_init(int socket)
+void Server::attempt_forward_message(int recv_socket)
+{
+        /* just a message that needs to be forwarded */
+        constexpr int MSG_BUFFER_SIZE = 1024;
+        std::array<std::byte, MSG_BUFFER_SIZE> msg_buffer{};
+        ssize_t num_bytes{};
+        num_bytes = recv(recv_socket, msg_buffer.data(), msg_buffer.size(), 0x00);
+        // TODO need to handle some error checking here
+
+        const Connection& conn = *socket_to_conn_m.at(recv_socket);
+
+
+
+        ssize_t bytes_sent = send(conn.egress_socket, msg_buffer.data(), num_bytes, 0x00);
+        while (bytes_sent >= 0) {
+            bytes_sent = send(conn.egress_socket, msg_buffer.data(), num_bytes, 0x00);
+        }
+
+        if (bytes_sent == EAGAIN) {
+            // arm the writer
+            // disarm the reader
+        }
+
+
+        send_bytes(inbound_to_outbound_m[socket], std::span(msg_buffer).subspan(0, num_bytes));
+}
+
+Error Server::handle_client_mapping_message(int client_socket)
 {
     /* handle the mapping message
      *
@@ -168,7 +189,7 @@ Error Server::handle_client_init(int socket)
     std::array<std::byte, 2 * sizeof(PortNum)> buffer{};
 
     uint16_t num_mappings{ 0 };
-    auto read_errc = read_bytes(socket, std::span{ buffer.data(), sizeof(PortNum) } );
+    auto read_errc = read_bytes(client_socket, std::span{ buffer.data(), sizeof(PortNum) } );
     if (read_errc) {
         return Error{ .context = "Failed to read number of mappings" };
     }
@@ -178,7 +199,7 @@ Error Server::handle_client_init(int socket)
 
     uint16_t mappings_processed{ 0 };
     while (mappings_processed < num_mappings) {
-        read_errc = read_bytes(socket, std::span{ buffer.data(), 2 * sizeof(uint16_t) });
+        read_errc = read_bytes(client_socket, std::span{ buffer.data(), 2 * sizeof(uint16_t) });
         if (read_errc) {
             return Error{ .context = "Failed to read number of mappings" };
         }
@@ -186,14 +207,14 @@ Error Server::handle_client_init(int socket)
         PortNum from_port = read_net_u16(std::span(buffer).subspan(0, sizeof(uint16_t)));
         PortNum to_port = read_net_u16(std::span(buffer).subspan(sizeof(uint16_t), sizeof(uint16_t)));
         PortMapping port_mapping{ from_port, to_port };
-
-        port_map_m[from_port] = to_port;
-        mappings_processed++;
         spdlog::debug("Received port mapping #{}: {}", mappings_processed, to_string(port_mapping));
+        mappings_processed++;
 
-        sockaddr_in data_addr = client_sockets_m.at(socket);
-        data_addr.sin_port = htons(from_port);
-        client_socket_address_m[to_port] = data_addr;
+        /* take the information that we stored from the client connection to
+         * build the destination address for this mapping */
+        sockaddr_in proxy_destination = client_sockets_m.at(client_socket);
+        proxy_destination.sin_port = htons(to_port);
+        ingress_port_to_destination_m[from_port] = proxy_destination;
 
         auto listening_socket = create_listening_socket(to_port);
         if (!listening_socket) {
@@ -218,7 +239,7 @@ std::expected<std::pair<int, sockaddr_in>, Error> Server::accept_connection(int 
             new_socket
             );
 
-    if (auto err = socket_monitor_m.subscribe_reader(new_socket)) {
+    if (auto err = socket_monitor_m.arm(new_socket, SocketMonitor::Interest::Read)) {
         return std::unexpected(*err);
     }
     return std::pair{ new_socket, socket_address };

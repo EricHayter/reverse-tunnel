@@ -4,6 +4,7 @@
 #include <vector>
 #include <thread>
 #include <unordered_map>
+#include <list>
 
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -19,6 +20,8 @@ private:
      * monitor */
     void handle_read_event(int socket);
 
+    void attempt_forward_message(int recv_socket);
+
     /* Handles a read event on a passive socket (i.e. an connection request)
      * subscribes the new connection to EPOLL_IN events */
     std::expected<std::pair<int, sockaddr_in>, Error> accept_connection(int listening_socket);
@@ -28,7 +31,7 @@ private:
     /* Handles the initial message from the client indicating the desired
      * mappings, and creates listening sockets for ingress packets with
      * create_listening_socket */
-    Error handle_client_init(int socket);
+    Error handle_client_mapping_message(int client_socket);
 
     /* Creates a socket add calls listen on it. Also subscribes for read EPOLLIN
      * events on the socket monitor */
@@ -37,6 +40,8 @@ private:
     /* Special case of a listening socket since once the connection is
      * established it will contain mapping requests */
     int client_listener_socket_m;
+
+    /* Maps from listening socket to it's binded port number */
     std::unordered_map<int, PortNum> listening_sockets_m;
 
     /* IMPORTANT!
@@ -51,15 +56,18 @@ private:
     // socket fd address of the connected client
     std::unordered_map<int, sockaddr_in> client_sockets_m;
 
-    /* for each of the forwarding ports keep track of the socked address of
-     * the client that we are forwarding packets to */
-    std::unordered_map<PortNum, sockaddr_in> client_socket_address_m;
+    /* Maps from ingress port to destination address */
+    std::unordered_map<PortNum, sockaddr_in> ingress_port_to_destination_m;
 
-    /* stores "from-to" mappings for TCP port tunnels */
-    std::unordered_map<int, int> port_map_m;
+    struct Connection {
+        static constexpr int BUFFER_SIZE = 1024;
+        Connection(int ingress_socket, int egress_socket) : ingress_socket(ingress_socket), egress_socket(egress_socket) {}
+        int ingress_socket;
+        std::array<std::byte, BUFFER_SIZE> ingress_buffer;
+        int egress_socket;
+        std::array<std::byte, BUFFER_SIZE> egress_buffer;
+    };
 
-    /* maps the in and out sockets that form the forwarding tunnel */
-    std::unordered_map<int, int> inbound_to_outbound_m;
-    std::unordered_map<int, int> outbound_to_inbound_m;
-
+    std::list<Connection> connections_m;
+    std::unordered_map<int, std::list<Connection>::iterator> socket_to_conn_m;
 };

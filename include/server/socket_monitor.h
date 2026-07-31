@@ -25,10 +25,20 @@
 
 class SocketMonitor {
 public:
+    /* An event reported by the monitor for a ready fd */
     enum class Event : uint8_t {
         Read   = EPOLLIN,
+        Write  = EPOLLOUT,
         HangUp = EPOLLHUP,
         Error  = EPOLLERR,
+    };
+
+    /* The interest that can be armed on an fd. Read interest lives on the read
+     * epoll instance and write interest on the write instance, so a fd's read
+     * and write oneshot lifecycles are fully independent */
+    enum class Interest : uint8_t {
+        Read  = EPOLLIN,
+        Write = EPOLLOUT,
     };
 
     /* Creates an instance of a socket monitor. Events that occur on the
@@ -43,12 +53,18 @@ public:
     SocketMonitor& operator=(SocketMonitor&& other) noexcept = default;
     SocketMonitor(SocketMonitor&& other) noexcept = default;
 
-    [[nodiscard]] std::optional<Error> subscribe_reader(int socket_fd) const;
-    [[nodiscard]] std::optional<Error> rearm_reader(int socket_fd) const;
+    /* Arms (or re-arms) the given interest on the fd. Adds the fd to the
+     * relevant epoll instance if it is not registered yet, otherwise modifies
+     * it, so this doubles as both the initial subscribe and the post-oneshot
+     * re-arm */
+    [[nodiscard]] std::optional<Error> arm(int socket_fd, Interest interest) const;
 
-    [[nodiscard]] std::optional<Error> subscribe_sender(int socket_fd) const;
-    [[nodiscard]] std::optional<Error> rearm_sender(int socket_fd) const;
+    /* Clears the given interest on the fd without unregistering it, so it can
+     * be armed again later. Useful to cancel a still-armed interest that has
+     * not fired yet */
+    [[nodiscard]] std::optional<Error> disarm(int socket_fd, Interest interest) const;
 
+    /* Removes the fd from both epoll instances entirely */
     void unsubscribe(int socket_fd) const;
 
     /* To prevent possible race conditions where multiple threads could get
@@ -59,15 +75,18 @@ public:
 
     std::optional<std::pair<int, Event>> pull_event(const std::stop_token& stop_token);
 private:
-    static constexpr uint32_t EPOLL_FLAGS     = EPOLLET | EPOLLONESHOT;
-    static constexpr uint32_t READER_EVENTS   = EPOLLIN | EPOLLERR | EPOLLHUP;
-    static constexpr uint32_t SENDER_EVENTS   = EPOLLERR | EPOLLHUP;
+    static constexpr uint32_t EPOLL_FLAGS = EPOLLET | EPOLLONESHOT;
 
-    static Event classify_event(uint32_t events);
+    /* Turns the events reported for a ready fd into a single Event. The read
+     * instance reports Read/HangUp/Error; the write instance only reports Write
+     * (HangUp/Error are left to the read instance to avoid duplicates) */
+    static std::optional<Event> classify_event(uint32_t events, bool is_reader);
 
-    void monitor_job(const std::stop_token& stop_token);
+    void monitor_job(const std::stop_token& stop_token, int epoll_fd, bool is_reader);
 
     Queue<std::pair<int, Event>> event_queue_m;
-    int epoll_fd_m;
-    std::jthread listener_thread_m;
+    int epoll_read_fd_m;
+    int epoll_write_fd_m;
+    std::jthread read_listener_m;
+    std::jthread write_listener_m;
 };
