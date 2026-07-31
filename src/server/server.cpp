@@ -9,6 +9,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <fcntl.h>
 
 #include "spdlog/spdlog.h"
 
@@ -144,6 +145,8 @@ void Server::handle_read_event(int socket) {
             socket_to_conn_m[*egress_socket] = connection_iter;
         }
     } else {
+        /* received a regular message to forward */
+        attempt_forward_message(socket);
     }
 }
 
@@ -215,10 +218,10 @@ Error Server::handle_client_mapping_message(int client_socket) {
         proxy_destination.sin_port = htons(to_port);
         ingress_port_to_destination_m[from_port] = proxy_destination;
 
-        auto listening_socket = create_listening_socket(to_port);
+        auto listening_socket = create_listening_socket(from_port);
         if (!listening_socket) {
             return listening_socket.error().with(std::format(
-                "Failed to setup listening socket on port {}", to_port));
+                "Failed to setup listening socket on port {}", from_port));
         }
     }
     return {};
@@ -245,7 +248,7 @@ Server::accept_connection(int listening_socket) {
 
 std::expected<int, Error>
 Server::create_connection(const sockaddr_in &client_addr_info) {
-    int new_socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0x00);
+    int new_socket = socket(AF_INET, SOCK_STREAM, 0x00);
     if (new_socket == -1) {
         return std::unexpected(Error{
             .context =
@@ -265,6 +268,10 @@ Server::create_connection(const sockaddr_in &client_addr_info) {
                 std::format("Connection attempt failed: {}",
                             strerror(errno))}); // NOLINT(concurrency-mt-unsafe)
     }
+
+    int flags = fcntl(new_socket, F_GETFL, 0);
+    assert(flags != -1);
+    assert(fcntl(new_socket, F_SETFL, flags | O_NONBLOCK) != -1);
 
     spdlog::debug("Successfully connected to {}",
                   get_addr_string(client_addr_info));
