@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <format>
 #include <optional>
 #include <span>
 #include <string>
@@ -64,7 +65,12 @@ std::optional<int> send_bytes(int socket_fd,
 std::string get_addr_string(const sockaddr_in &sock_addr) {
     std::array<char, INET_ADDRSTRLEN> str{};
     inet_ntop(AF_INET, &(sock_addr.sin_addr), str.data(), INET_ADDRSTRLEN);
-    return str.data();
+    return std::format("{}:{}", str.data(), ntohs(sock_addr.sin_port));
+}
+
+std::string get_addr_string(const addrinfo &info) {
+    return get_addr_string(*reinterpret_cast<const sockaddr_in *>(
+        info.ai_addr)); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
 }
 
 std::uint16_t read_net_u16(std::span<const std::byte> bytes) {

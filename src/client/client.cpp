@@ -40,24 +40,15 @@ Client::Client(const std::string &addr_string,
         throw std::runtime_error("Failed to create socket FD");
     }
 
-    spdlog::debug(
-        "Attempting to connect at {} on port {}",
-        get_addr_string(*reinterpret_cast<sockaddr_in *>(
-            server_info
-                ->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        SERVER_LISTENING_PORTNUM);
+    spdlog::debug("Attempting to connect at {}", get_addr_string(*server_info));
 
     if (connect(sock_fd_m, server_info->ai_addr, server_info->ai_addrlen) ==
         -1) {
         throw std::runtime_error("Call to connect() failed");
     };
 
-    spdlog::debug(
-        "Successfully connected to {} on port {}, sending mapping message",
-        get_addr_string(*reinterpret_cast<sockaddr_in *>(
-            server_info
-                ->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        SERVER_LISTENING_PORTNUM);
+    spdlog::debug("Successfully connected to {}, sending mapping message",
+                  get_addr_string(*server_info));
 
     auto err = send_mapping_message();
     if (err) {

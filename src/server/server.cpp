@@ -69,12 +69,8 @@ std::expected<int, Error> Server::create_listening_socket(PortNum port_num) {
 
     socket_monitor_m.arm(listening_socket, SocketMonitor::Interest::Read);
 
-    spdlog::info(
-        "Listening for external connections on {}:{} (socket fd {})",
-        get_addr_string(*reinterpret_cast<sockaddr_in *>(
-            local_addr
-                ->ai_addr)), // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        port_num, listening_socket);
+    spdlog::info("Listening for external connections on {} (socket fd {})",
+                 get_addr_string(*local_addr), listening_socket);
 
     freeaddrinfo(local_addr);
     return listening_socket;
