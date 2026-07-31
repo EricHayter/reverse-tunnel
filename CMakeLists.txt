@@ -16,5 +16,22 @@ endif()
 
 include_directories(include)
 
+find_program(CLANG_FORMAT_BIN "clang-format")
+if(NOT CLANG_FORMAT_BIN)
+    message(WARNING "clang-format not found! 'format' target unavailable")
+else()
+    file(GLOB_RECURSE FORMAT_SOURCES
+        "${CMAKE_SOURCE_DIR}/src/*.cpp"
+        "${CMAKE_SOURCE_DIR}/src/*.h"
+        "${CMAKE_SOURCE_DIR}/include/*.h"
+    )
+    add_custom_target(format
+        COMMAND ${CLANG_FORMAT_BIN} -i --style=file ${FORMAT_SOURCES}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "Formatting sources with clang-format"
+        VERBATIM
+    )
+endif()
+
 add_subdirectory(src)
 add_subdirectory(thirdparty)

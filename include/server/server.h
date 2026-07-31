@@ -1,21 +1,22 @@
 #pragma once
 
 #include <expected>
-#include <vector>
+#include <list>
 #include <thread>
 #include <unordered_map>
-#include <list>
+#include <vector>
 
-#include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/socket.h>
 
 #include "common/definitions.h"
 #include "server/socket_monitor.h"
 
 class Server {
-public:
+  public:
     explicit Server(std::size_t num_workers);
-private:
+
+  private:
     /* Handles all of the read events on sockets monitored by the socket
      * monitor */
     void handle_read_event(int socket);
@@ -24,9 +25,11 @@ private:
 
     /* Handles a read event on a passive socket (i.e. an connection request)
      * subscribes the new connection to EPOLL_IN events */
-    std::expected<std::pair<int, sockaddr_in>, Error> accept_connection(int listening_socket);
+    std::expected<std::pair<int, sockaddr_in>, Error>
+    accept_connection(int listening_socket);
 
-    static std::expected<int, Error> create_connection(const sockaddr_in& client_addr_info);
+    static std::expected<int, Error>
+    create_connection(const sockaddr_in &client_addr_info);
 
     /* Handles the initial message from the client indicating the desired
      * mappings, and creates listening sockets for ingress packets with
@@ -51,7 +54,7 @@ private:
 
     // worker pool stuff
     std::vector<std::jthread> workers_m;
-    void worker_func(const std::stop_token& stop_token);
+    void worker_func(const std::stop_token &stop_token);
 
     // socket fd address of the connected client
     std::unordered_map<int, sockaddr_in> client_sockets_m;
@@ -61,7 +64,8 @@ private:
 
     struct Connection {
         static constexpr int BUFFER_SIZE = 1024;
-        Connection(int ingress_socket, int egress_socket) : ingress_socket(ingress_socket), egress_socket(egress_socket) {}
+        Connection(int ingress_socket, int egress_socket)
+            : ingress_socket(ingress_socket), egress_socket(egress_socket) {}
         int ingress_socket;
         std::array<std::byte, BUFFER_SIZE> ingress_buffer;
         int egress_socket;

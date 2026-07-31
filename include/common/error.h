@@ -1,8 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <string_view>
-#include <cstdint>
 
 enum class TunnelErrc : uint8_t {
     // MAYBE ONE FOR BAD FORMAT ON IP invalid_
@@ -20,5 +20,5 @@ struct Error {
     Error with(std::string_view context) &&;
 
     [[nodiscard]]
-    Error with(std::string_view context) const&;
+    Error with(std::string_view context) const &;
 };

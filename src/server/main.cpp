@@ -1,14 +1,13 @@
 #include <csignal>
-#include <iostream>
 #include <exception>
+#include <iostream>
 
-#include <argparse/argparse.hpp>
 #include "spdlog/spdlog.h"
+#include <argparse/argparse.hpp>
 
 #include "server/server.h"
 
-
-int main(int argc, const char** argv) {
+int main(int argc, const char **argv) {
     argparse::ArgumentParser program("server");
     program.add_argument("-v", "--verbose")
         .help("increase output verbosity")
@@ -16,15 +15,15 @@ int main(int argc, const char** argv) {
 
     try {
         program.parse_args(argc, argv);
-    }
-    catch (const std::exception& err) {
+    } catch (const std::exception &err) {
         std::cerr << err.what() << '\n';
         std::cerr << program;
         return 1;
     }
 
     if (program["--verbose"] == true) {
-        spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
+        spdlog::set_level(
+            spdlog::level::debug); // Set *global* log level to debug
     }
 
     // Block termination signals before spawning any worker threads. Threads
@@ -41,15 +40,14 @@ int main(int argc, const char** argv) {
 
     try {
         spdlog::info("Starting server");
-        Server server{ 4 };
+        Server server{4};
 
         // Sleep here until the user asks us to stop (Ctrl-C / SIGTERM). No busy
         // loop: sigwait blocks the thread and uses no CPU.
-        int received_signal{ 0 };
+        int received_signal{0};
         sigwait(&signal_mask, &received_signal);
         spdlog::info("Received signal {}, shutting down", received_signal);
-    }
-    catch (const std::exception& err) {
+    } catch (const std::exception &err) {
         spdlog::error("Server terminated: {}", err.what());
         return 1;
     }

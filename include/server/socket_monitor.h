@@ -20,24 +20,24 @@
 
 #include <sys/epoll.h>
 
-#include "common/locking_queue.h"
 #include "common/error.h"
+#include "common/locking_queue.h"
 
 class SocketMonitor {
-public:
+  public:
     /* An event reported by the monitor for a ready fd */
     enum class Event : uint8_t {
-        Read   = EPOLLIN,
-        Write  = EPOLLOUT,
+        Read = EPOLLIN,
+        Write = EPOLLOUT,
         HangUp = EPOLLHUP,
-        Error  = EPOLLERR,
+        Error = EPOLLERR,
     };
 
     /* The interest that can be armed on an fd. Read interest lives on the read
      * epoll instance and write interest on the write instance, so a fd's read
      * and write oneshot lifecycles are fully independent */
     enum class Interest : uint8_t {
-        Read  = EPOLLIN,
+        Read = EPOLLIN,
         Write = EPOLLOUT,
     };
 
@@ -47,22 +47,24 @@ public:
     SocketMonitor();
     ~SocketMonitor();
 
-    SocketMonitor& operator=(const SocketMonitor& other) = delete;
-    SocketMonitor(const SocketMonitor& other) = delete;
+    SocketMonitor &operator=(const SocketMonitor &other) = delete;
+    SocketMonitor(const SocketMonitor &other) = delete;
 
-    SocketMonitor& operator=(SocketMonitor&& other) noexcept = default;
-    SocketMonitor(SocketMonitor&& other) noexcept = default;
+    SocketMonitor &operator=(SocketMonitor &&other) noexcept = default;
+    SocketMonitor(SocketMonitor &&other) noexcept = default;
 
     /* Arms (or re-arms) the given interest on the fd. Adds the fd to the
      * relevant epoll instance if it is not registered yet, otherwise modifies
      * it, so this doubles as both the initial subscribe and the post-oneshot
      * re-arm */
-    [[nodiscard]] std::optional<Error> arm(int socket_fd, Interest interest) const;
+    [[nodiscard]] std::optional<Error> arm(int socket_fd,
+                                           Interest interest) const;
 
     /* Clears the given interest on the fd without unregistering it, so it can
      * be armed again later. Useful to cancel a still-armed interest that has
      * not fired yet */
-    [[nodiscard]] std::optional<Error> disarm(int socket_fd, Interest interest) const;
+    [[nodiscard]] std::optional<Error> disarm(int socket_fd,
+                                              Interest interest) const;
 
     /* Removes the fd from both epoll instances entirely */
     void unsubscribe(int socket_fd) const;
@@ -73,8 +75,10 @@ public:
      * "re-arming" an event. Therefore we need to explicitly declare when
      * an event has been handled */
 
-    std::optional<std::pair<int, Event>> pull_event(const std::stop_token& stop_token);
-private:
+    std::optional<std::pair<int, Event>>
+    pull_event(const std::stop_token &stop_token);
+
+  private:
     static constexpr uint32_t EPOLL_FLAGS = EPOLLET | EPOLLONESHOT;
 
     /* Turns the events reported for a ready fd into a single Event. The read
@@ -82,7 +86,8 @@ private:
      * (HangUp/Error are left to the read instance to avoid duplicates) */
     static std::optional<Event> classify_event(uint32_t events, bool is_reader);
 
-    void monitor_job(const std::stop_token& stop_token, int epoll_fd, bool is_reader);
+    void monitor_job(const std::stop_token &stop_token, int epoll_fd,
+                     bool is_reader);
 
     Queue<std::pair<int, Event>> event_queue_m;
     int epoll_read_fd_m;

@@ -53,34 +53,28 @@
 
 namespace experimental {
 
-template<typename T>
-class Queue {
-public:
-    Queue()
-        : head_m{ new Node{ } }
-        , tail_m{ head_m.load() }
-    {}
+template <typename T> class Queue {
+  public:
+    Queue() : head_m{new Node{}}, tail_m{head_m.load()} {}
 
-    void push(T&& val);
+    void push(T &&val);
     std::optional<T> pop();
 
-private:
+  private:
     struct Node {
-        T value{ };
-        std::atomic<Node*> next{ };
+        T value{};
+        std::atomic<Node *> next{};
     };
 
-    std::atomic<Node*> head_m{ };
-    std::atomic<Node*> tail_m{ };
+    std::atomic<Node *> head_m{};
+    std::atomic<Node *> tail_m{};
 };
 
-template<typename T>
-std::optional<T> Queue<T>::pop()
-{
+template <typename T> std::optional<T> Queue<T>::pop() {
     while (true) {
-        Node* old_head = head_m.load();
-        Node* old_tail = tail_m.load();
-        Node* old_next = old_head->next.load();
+        Node *old_head = head_m.load();
+        Node *old_tail = tail_m.load();
+        Node *old_next = old_head->next.load();
 
         if (old_head == old_tail) {
             // empty queue
@@ -99,14 +93,12 @@ std::optional<T> Queue<T>::pop()
     }
 }
 
-template<typename T>
-void Queue<T>::push(T&& val)
-{
-    Node* new_node = new Node{ .value = std::forward<T>(val), .next = nullptr };
-    Node* old_tail = tail_m.load();
+template <typename T> void Queue<T>::push(T &&val) {
+    Node *new_node = new Node{.value = std::forward<T>(val), .next = nullptr};
+    Node *old_tail = tail_m.load();
     while (true) {
         // We expect tail to be the last element
-        Node* old_tail_next = nullptr;
+        Node *old_tail_next = nullptr;
         if (old_tail->next.compare_exchange_weak(old_tail_next, new_node)) {
             // Attempt to set the new tail. We can't keep busy retrying this
             // since our node may not have been the last insert in this case.

@@ -11,11 +11,10 @@
  * amount to fill the entire span */
 std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer);
 
-
 /* Send the entire contents of the buffer over the given socket */
 std::optional<int> send_bytes(int socket_fd, std::span<const std::byte> buffer);
 
-std::string get_addr_string(const sockaddr_in& sock_addr);
+std::string get_addr_string(const sockaddr_in &sock_addr);
 
 /* Read a uint16 in network byte order from the front of a byte span, converting
  * it to host order. Avoids the alignment/aliasing UB of casting the buffer
