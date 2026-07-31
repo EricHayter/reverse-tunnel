@@ -66,12 +66,7 @@ std::expected<int, Error> Server::create_listening_socket(PortNum port_num) {
 
     listening_sockets_m[listening_socket] = port_num;
 
-    auto listener_subscribe_failure =
-        socket_monitor_m.arm(listening_socket, SocketMonitor::Interest::Read);
-    if (listener_subscribe_failure) {
-        freeaddrinfo(local_addr);
-        return std::unexpected(*listener_subscribe_failure);
-    }
+    socket_monitor_m.arm(listening_socket, SocketMonitor::Interest::Read);
 
     spdlog::info(
         "Listening for external connections on {}:{} (socket fd {})",
@@ -153,29 +148,30 @@ void Server::handle_read_event(int socket) {
 }
 
 void Server::attempt_forward_message(int recv_socket) {
-    /* just a message that needs to be forwarded */
-    constexpr int MSG_BUFFER_SIZE = 1024;
-    std::array<std::byte, MSG_BUFFER_SIZE> msg_buffer{};
-    ssize_t num_bytes{};
-    num_bytes = recv(recv_socket, msg_buffer.data(), msg_buffer.size(), 0x00);
-    // TODO need to handle some error checking here
+    Connection& conn = *socket_to_conn_m[recv_socket];
+    assert(recv_socket == conn.ingress_socket || recv_socket == conn.egress_socket);
+    bool is_ingress_socket{ recv_socket == conn.ingress_socket };
+    std::span<std::byte> buffer_span = is_ingress_socket ? conn.ingress_buffer : conn.egress_buffer;
 
-    const Connection &conn = *socket_to_conn_m.at(recv_socket);
+    ssize_t bytes_received = recv(recv_socket, buffer_span.data(), buffer_span.size(), 0x00);
+    if (bytes_received == -1) {
+        spdlog::error("Failed to forward message from socket {}: {}", recv_socket, strerror(errno)); // NOLINT(concurrency-mt-unsafe)
+        return;
+    }
 
-    ssize_t bytes_sent =
-        send(conn.egress_socket, msg_buffer.data(), num_bytes, 0x00);
+    /* We need to send the message out of the opposite socket in the connection */
+    int sending_socket = is_ingress_socket ? conn.egress_socket : conn.ingress_socket;
+    ssize_t bytes_sent = send(sending_socket, buffer_span.data(), bytes_received, 0x00);
     while (bytes_sent >= 0) {
-        bytes_sent =
-            send(conn.egress_socket, msg_buffer.data(), num_bytes, 0x00);
+        bytes_sent = send(sending_socket, buffer_span.data(), bytes_received, 0x00);
     }
 
+    /* receiver of the message isn't ready to take that new mesasge so we
+     * throttle the reader and wait for the writer to be ready to write again */
     if (bytes_sent == EAGAIN) {
-        // arm the writer
-        // disarm the reader
+        socket_monitor_m.disarm(recv_socket, SocketMonitor::Interest::Read);
+        socket_monitor_m.arm(recv_socket, SocketMonitor::Interest::Write);
     }
-
-    send_bytes(inbound_to_outbound_m[socket],
-               std::span(msg_buffer).subspan(0, num_bytes));
 }
 
 Error Server::handle_client_mapping_message(int client_socket) {
@@ -243,10 +239,7 @@ Server::accept_connection(int listening_socket) {
     spdlog::debug("Accepted connection from {} (socket fd {})",
                   get_addr_string(socket_address), new_socket);
 
-    if (auto err =
-            socket_monitor_m.arm(new_socket, SocketMonitor::Interest::Read)) {
-        return std::unexpected(*err);
-    }
+    socket_monitor_m.arm(new_socket, SocketMonitor::Interest::Read);
     return std::pair{new_socket, socket_address};
 }
 

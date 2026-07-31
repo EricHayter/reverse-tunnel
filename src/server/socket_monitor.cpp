@@ -1,6 +1,7 @@
 #include "server/socket_monitor.h"
 #include "spdlog/spdlog.h"
-#include <cassert>
+#include <cstdlib>
+#include <cstring>
 
 SocketMonitor::SocketMonitor()
     : epoll_read_fd_m(epoll_create1(0x00)),
@@ -18,8 +19,21 @@ SocketMonitor::SocketMonitor()
                                     epoll_write_fd_m, false);
 }
 
-std::optional<Error> SocketMonitor::arm(int socket_fd,
-                                        Interest interest) const {
+/* epoll_ctl only fails here on unrecoverable resource exhaustion
+ * (ENOSPC/ENOMEM), which means something has already broken down badly. There
+ * is nothing sensible to hand back to the caller, so log and take the whole
+ * process down */
+namespace {
+[[noreturn]] void abort_on_epoll_failure(int socket_fd) {
+    spdlog::critical(
+        "epoll_ctl failed on fd {}: {} -- aborting",
+        socket_fd,
+        strerror(errno)); // NOLINT(concurrency-mt-unsafe)
+    std::abort();
+}
+} // namespace
+
+void SocketMonitor::arm(int socket_fd, Interest interest) const {
     int epoll_fd =
         (interest == Interest::Read) ? epoll_read_fd_m : epoll_write_fd_m;
 
@@ -31,17 +45,16 @@ std::optional<Error> SocketMonitor::arm(int socket_fd,
      * it. This lets arm serve as both the first subscribe and the re-arm after
      * a oneshot event without the caller tracking which it is */
     if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, socket_fd, &event) == 0) {
-        return std::nullopt;
+        return;
     }
     if (errno == ENOENT &&
         epoll_ctl(epoll_fd, EPOLL_CTL_ADD, socket_fd, &event) == 0) {
-        return std::nullopt;
+        return;
     }
-    return Error{.context = "Failed to arm interest on fd"};
+    abort_on_epoll_failure(socket_fd);
 }
 
-std::optional<Error> SocketMonitor::disarm(int socket_fd,
-                                           Interest interest) const {
+void SocketMonitor::disarm(int socket_fd, Interest interest) const {
     int epoll_fd =
         (interest == Interest::Read) ? epoll_read_fd_m : epoll_write_fd_m;
 
@@ -52,9 +65,8 @@ std::optional<Error> SocketMonitor::disarm(int socket_fd,
     event.data.fd = socket_fd;
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, socket_fd, &event) == -1) {
-        return Error{.context = "Failed to disarm interest on fd"};
+        abort_on_epoll_failure(socket_fd);
     }
-    return std::nullopt;
 }
 
 void SocketMonitor::unsubscribe(int socket_fd) const {

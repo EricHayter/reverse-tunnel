@@ -20,7 +20,6 @@
 
 #include <sys/epoll.h>
 
-#include "common/error.h"
 #include "common/locking_queue.h"
 
 class SocketMonitor {
@@ -56,15 +55,17 @@ class SocketMonitor {
     /* Arms (or re-arms) the given interest on the fd. Adds the fd to the
      * relevant epoll instance if it is not registered yet, otherwise modifies
      * it, so this doubles as both the initial subscribe and the post-oneshot
-     * re-arm */
-    [[nodiscard]] std::optional<Error> arm(int socket_fd,
-                                           Interest interest) const;
+     * re-arm.
+     *
+     * A failing epoll_ctl here only happens on unrecoverable resource
+     * exhaustion (ENOSPC/ENOMEM), so it logs and aborts rather than reporting
+     * an error the caller cannot act on */
+    void arm(int socket_fd, Interest interest) const;
 
     /* Clears the given interest on the fd without unregistering it, so it can
      * be armed again later. Useful to cancel a still-armed interest that has
-     * not fired yet */
-    [[nodiscard]] std::optional<Error> disarm(int socket_fd,
-                                              Interest interest) const;
+     * not fired yet. Aborts on failure for the same reason as arm */
+    void disarm(int socket_fd, Interest interest) const;
 
     /* Removes the fd from both epoll instances entirely */
     void unsubscribe(int socket_fd) const;

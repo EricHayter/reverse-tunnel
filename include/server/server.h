@@ -10,6 +10,7 @@
 #include <sys/socket.h>
 
 #include "common/definitions.h"
+#include "common/error.h"
 #include "server/socket_monitor.h"
 
 class Server {
