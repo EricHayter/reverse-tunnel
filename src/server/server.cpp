@@ -135,6 +135,7 @@ void Server::handle_read_event(int socket) {
                 close(ingress_socket);
                 return;
             }
+            socket_monitor_m.arm(*egress_socket, SocketMonitor::Interest::Read);
             auto connection_iter = connections_m.emplace(
                 connections_m.end(), ingress_socket, *egress_socket);
             socket_to_conn_m[ingress_socket] = connection_iter;
