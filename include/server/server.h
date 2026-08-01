@@ -1,13 +1,15 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <expected>
 #include <list>
+#include <span>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include <netinet/in.h>
-#include <sys/socket.h>
 
 #include "common/definitions.h"
 #include "common/error.h"
@@ -18,6 +20,18 @@ class Server {
     explicit Server(std::size_t num_workers);
 
   private:
+    /* A one-way byte stream from a source socket to a sink socket: data read
+     * from the source is buffered and drained out of the sink. A full-duplex
+     * tunnel is just a pair of these pointing opposite ways */
+    struct Pipe {
+        static constexpr int BUFFER_SIZE = 1024;
+
+        int source_socket;
+        int sink_socket;
+        std::array<std::byte, BUFFER_SIZE> buffer{};
+        std::span<std::byte> message;
+    };
+
     /* Handles all of the read events on sockets monitored by the socket
      * monitor */
     void handle_read_event(int socket);
@@ -63,16 +77,19 @@ class Server {
     /* Maps from ingress port to destination address */
     std::unordered_map<PortNum, sockaddr_in> ingress_port_to_destination_m;
 
-    struct Connection {
-        static constexpr int BUFFER_SIZE = 1024;
-        Connection(int ingress_socket, int egress_socket)
-            : ingress_socket(ingress_socket), egress_socket(egress_socket) {}
-        int ingress_socket;
-        std::array<std::byte, BUFFER_SIZE> ingress_buffer;
-        int egress_socket;
-        std::array<std::byte, BUFFER_SIZE> egress_buffer;
-    };
+    /* Handles a write event: the socket became writable, so drain whatever is
+     * still pending to be sent out of it */
+    void handle_write_event(int writable_socket);
 
-    std::list<Connection> connections_m;
-    std::unordered_map<int, std::list<Connection>::iterator> socket_to_conn_m;
+    /* Sends the pipe's pending message out of its sink. On EAGAIN it arms the
+     * sink for writability and returns (leaving the remainder for a later
+     * flush); once fully sent it re-arms the source for reading */
+    void flush_pipe(Pipe &pipe);
+
+    std::list<Pipe> pipes_m;
+
+    /* An fd's read events go to the pipe it is the source of; its write events
+     * go to the pipe it is the sink of */
+    std::unordered_map<int, std::list<Pipe>::iterator> source_pipes_m;
+    std::unordered_map<int, std::list<Pipe>::iterator> sink_pipes_m;
 };

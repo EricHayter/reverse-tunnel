@@ -91,6 +91,7 @@ void Server::worker_func(const std::stop_token &stop_token) {
             }
             case SocketMonitor::Event::Write: {
                 spdlog::debug("Handling write event on fd {}", socket_fd);
+                handle_write_event(socket_fd);
                 break;
             }
             case SocketMonitor::Event::HangUp: {
@@ -136,10 +137,18 @@ void Server::handle_read_event(int socket) {
                 return;
             }
             socket_monitor_m.arm(*egress_socket, SocketMonitor::Interest::Read);
-            auto connection_iter = connections_m.emplace(
-                connections_m.end(), ingress_socket, *egress_socket);
-            socket_to_conn_m[ingress_socket] = connection_iter;
-            socket_to_conn_m[*egress_socket] = connection_iter;
+
+            /* wire up a pipe for each direction and route each endpoint's read
+             * events to the pipe that reads from it and its write events to the
+             * pipe that drains to it */
+            auto to_egress = pipes_m.emplace(pipes_m.end(), ingress_socket,
+                                             *egress_socket);
+            auto to_ingress = pipes_m.emplace(pipes_m.end(), *egress_socket,
+                                              ingress_socket);
+            source_pipes_m[ingress_socket] = to_egress;
+            sink_pipes_m[*egress_socket] = to_egress;
+            source_pipes_m[*egress_socket] = to_ingress;
+            sink_pipes_m[ingress_socket] = to_ingress;
         }
     } else {
         /* received a regular message to forward */
@@ -148,44 +157,48 @@ void Server::handle_read_event(int socket) {
 }
 
 void Server::attempt_forward_message(int recv_socket) {
-    Connection &conn = *socket_to_conn_m[recv_socket];
-    assert(recv_socket == conn.ingress_socket ||
-           recv_socket == conn.egress_socket);
-    bool is_ingress_socket{recv_socket == conn.ingress_socket};
-    std::span<std::byte> buffer_span =
-        is_ingress_socket ? conn.ingress_buffer : conn.egress_buffer;
+    Pipe &pipe = *source_pipes_m.at(recv_socket);
 
-    ssize_t bytes_received =
-        recv(recv_socket, buffer_span.data(), buffer_span.size(), 0x00);
-    if (bytes_received == -1) {
-        spdlog::error("Failed to forward message from socket {}: {}",
-                      recv_socket,
+    ssize_t bytes =
+        recv(recv_socket, pipe.buffer.data(), pipe.buffer.size(), 0);
+    if (bytes == -1) {
+        spdlog::error("Failed to read from socket {}: {}", recv_socket,
                       strerror(errno)); // NOLINT(concurrency-mt-unsafe)
         return;
     }
-    buffer_span = buffer_span.subspan(0, bytes_received);
+    pipe.message =
+        std::span(pipe.buffer).subspan(0, static_cast<std::size_t>(bytes));
+    spdlog::debug("Forwarding {} bytes from fd {} to fd {}", bytes, recv_socket,
+                  pipe.sink_socket);
+    flush_pipe(pipe);
+}
 
-    /* We need to send the message out of the opposite socket in the connection
-     */
-    int sending_socket =
-        is_ingress_socket ? conn.egress_socket : conn.ingress_socket;
-    ssize_t bytes_sent =
-        send(sending_socket, buffer_span.data(), bytes_received, 0x00);
-    while (buffer_span.size() > 0) {
-        bytes_sent =
-            send(sending_socket, buffer_span.data(), buffer_span.size(), 0x00);
-        buffer_span = buffer_span.subspan(bytes_sent);
+void Server::handle_write_event(int writable_socket) {
+    flush_pipe(*sink_pipes_m.at(writable_socket));
+}
+
+void Server::flush_pipe(Pipe &pipe) {
+    while (!pipe.message.empty()) {
+        ssize_t bytes =
+            send(pipe.sink_socket, pipe.message.data(), pipe.message.size(), 0);
+        if (bytes == -1) {
+            if (errno == EAGAIN) {
+                /* sink is backed up; wait for it to become writable before
+                 * sending more. The source stays un-armed for reading (oneshot
+                 * already disarmed it) which applies backpressure */
+                socket_monitor_m.arm(pipe.sink_socket,
+                                     SocketMonitor::Interest::Write);
+                return;
+            }
+            spdlog::error("Failed to send on socket {}: {}", pipe.sink_socket,
+                          strerror(errno)); // NOLINT(concurrency-mt-unsafe)
+            return;
+        }
+        pipe.message = pipe.message.subspan(static_cast<std::size_t>(bytes));
     }
 
-    spdlog::debug("Forwarded message of {} bytes on fd {}", bytes_received,
-                  recv_socket);
-
-    /* receiver of the message isn't ready to take that new mesasge so we
-     * throttle the reader and wait for the writer to be ready to write again */
-    if (bytes_sent == EAGAIN) {
-        socket_monitor_m.disarm(recv_socket, SocketMonitor::Interest::Read);
-        socket_monitor_m.arm(recv_socket, SocketMonitor::Interest::Write);
-    }
+    /* fully flushed, so resume reading from the source */
+    socket_monitor_m.arm(pipe.source_socket, SocketMonitor::Interest::Read);
 }
 
 Error Server::handle_client_mapping_message(int client_socket) {
