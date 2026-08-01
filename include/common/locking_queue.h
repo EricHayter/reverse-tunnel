@@ -38,8 +38,7 @@ template <typename T> void Queue<T>::push(T val) {
     cond_m->notify_one();
 }
 
-template <typename T>
-std::optional<T> Queue<T>::pop(const std::stop_token &stop_token) {
+template <typename T> std::optional<T> Queue<T>::pop(const std::stop_token &stop_token) {
     std::unique_lock<std::mutex> lock{*mut_m};
     cond_m->wait(lock, stop_token, [this]() { return !queue_m.empty(); });
     if (stop_token.stop_requested()) {

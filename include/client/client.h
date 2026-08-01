@@ -10,8 +10,7 @@
 
 class Client {
   public:
-    Client(const std::string &addr_string,
-           std::span<const PortMapping> mappings);
+    Client(const std::string &addr_string, std::span<const PortMapping> mappings);
     std::optional<Error> send_mapping_message();
 
   private:

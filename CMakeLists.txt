@@ -20,7 +20,7 @@ find_program(CLANG_FORMAT_BIN "clang-format")
 if(NOT CLANG_FORMAT_BIN)
     message(WARNING "clang-format not found! 'format' target unavailable")
 else()
-    file(GLOB_RECURSE FORMAT_SOURCES
+    file(GLOB_RECURSE FORMAT_SOURCES CONFIGURE_DEPENDS
         "${CMAKE_SOURCE_DIR}/src/*.cpp"
         "${CMAKE_SOURCE_DIR}/src/*.h"
         "${CMAKE_SOURCE_DIR}/include/*.h"

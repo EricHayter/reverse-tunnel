@@ -9,9 +9,7 @@
 
 int main(int argc, const char **argv) {
     argparse::ArgumentParser program("server");
-    program.add_argument("-v", "--verbose")
-        .help("increase output verbosity")
-        .flag();
+    program.add_argument("-v", "--verbose").help("increase output verbosity").flag();
 
     try {
         program.parse_args(argc, argv);
@@ -22,8 +20,7 @@ int main(int argc, const char **argv) {
     }
 
     if (program["--verbose"] == true) {
-        spdlog::set_level(
-            spdlog::level::debug); // Set *global* log level to debug
+        spdlog::set_level(spdlog::level::debug); // Set *global* log level to debug
     }
 
     // Block termination signals before spawning any worker threads. Threads

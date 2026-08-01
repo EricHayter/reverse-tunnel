@@ -17,8 +17,7 @@
 
 std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer) {
     while (true) {
-        const ssize_t recv_size =
-            recv(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
+        const ssize_t recv_size = recv(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
         // socket got closed
         if (recv_size == 0) {
             return 0;
@@ -38,11 +37,9 @@ std::optional<int> read_bytes(int socket_fd, std::span<std::byte> buffer) {
     }
 }
 
-std::optional<int> send_bytes(int socket_fd,
-                              std::span<const std::byte> buffer) {
+std::optional<int> send_bytes(int socket_fd, std::span<const std::byte> buffer) {
     while (true) {
-        const ssize_t send_size =
-            send(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
+        const ssize_t send_size = send(socket_fd, buffer.data(), buffer.size_bytes(), 0x00);
         // socket got closed
         if (send_size == 0) {
             return 0;

@@ -27,8 +27,7 @@ class MessageBufferManager {
 
   private:
     using MessageBuffer = std::array<std::byte, MESSAGE_BUFFER_SIZE>;
-    static constexpr std::size_t NUM_BUFFERS =
-        50; // TODO this will need to change most likely
+    static constexpr std::size_t NUM_BUFFERS = 50; // TODO this will need to change most likely
 
     std::vector<MessageBuffer> buffers_m;
     std::unordered_set<BufferId> available_buffers_m;

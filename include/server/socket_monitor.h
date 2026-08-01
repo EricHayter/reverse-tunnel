@@ -76,8 +76,7 @@ class SocketMonitor {
      * "re-arming" an event. Therefore we need to explicitly declare when
      * an event has been handled */
 
-    std::optional<std::pair<int, Event>>
-    pull_event(const std::stop_token &stop_token);
+    std::optional<std::pair<int, Event>> pull_event(const std::stop_token &stop_token);
 
   private:
     static constexpr uint32_t EPOLL_FLAGS = EPOLLET | EPOLLONESHOT;
@@ -87,8 +86,7 @@ class SocketMonitor {
      * (HangUp/Error are left to the read instance to avoid duplicates) */
     static std::optional<Event> classify_event(uint32_t events, bool is_reader);
 
-    void monitor_job(const std::stop_token &stop_token, int epoll_fd,
-                     bool is_reader);
+    void monitor_job(const std::stop_token &stop_token, int epoll_fd, bool is_reader);
 
     Queue<std::pair<int, Event>> event_queue_m;
     int epoll_read_fd_m;

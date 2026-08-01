@@ -40,11 +40,9 @@ class Server {
 
     /* Handles a read event on a passive socket (i.e. an connection request)
      * subscribes the new connection to EPOLL_IN events */
-    std::expected<std::pair<int, sockaddr_in>, Error>
-    accept_connection(int listening_socket);
+    std::expected<std::pair<int, sockaddr_in>, Error> accept_connection(int listening_socket);
 
-    static std::expected<int, Error>
-    create_connection(const sockaddr_in &client_addr_info);
+    static std::expected<int, Error> create_connection(const sockaddr_in &client_addr_info);
 
     /* Handles the initial message from the client indicating the desired
      * mappings, and creates listening sockets for ingress packets with
