@@ -5,11 +5,11 @@
 #include <span>
 
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
-#include <fcntl.h>
 
 #include "spdlog/spdlog.h"
 
@@ -110,8 +110,8 @@ void Server::handle_read_event(int socket) {
     /* receiving message from clients (message mapping)  */
     if (client_sockets_m.contains(socket)) {
         handle_client_mapping_message(socket);
-        /* new connection attempt */
     } else if (listening_sockets_m.contains(socket)) {
+        /* new connection attempt */
         auto new_connection = accept_connection(socket);
         if (!new_connection) {
             spdlog::error("Connection acceptance failed on socket fd {}",
@@ -147,23 +147,37 @@ void Server::handle_read_event(int socket) {
 }
 
 void Server::attempt_forward_message(int recv_socket) {
-    Connection& conn = *socket_to_conn_m[recv_socket];
-    assert(recv_socket == conn.ingress_socket || recv_socket == conn.egress_socket);
-    bool is_ingress_socket{ recv_socket == conn.ingress_socket };
-    std::span<std::byte> buffer_span = is_ingress_socket ? conn.ingress_buffer : conn.egress_buffer;
+    Connection &conn = *socket_to_conn_m[recv_socket];
+    assert(recv_socket == conn.ingress_socket ||
+           recv_socket == conn.egress_socket);
+    bool is_ingress_socket{recv_socket == conn.ingress_socket};
+    std::span<std::byte> buffer_span =
+        is_ingress_socket ? conn.ingress_buffer : conn.egress_buffer;
 
-    ssize_t bytes_received = recv(recv_socket, buffer_span.data(), buffer_span.size(), 0x00);
+    ssize_t bytes_received =
+        recv(recv_socket, buffer_span.data(), buffer_span.size(), 0x00);
     if (bytes_received == -1) {
-        spdlog::error("Failed to forward message from socket {}: {}", recv_socket, strerror(errno)); // NOLINT(concurrency-mt-unsafe)
+        spdlog::error("Failed to forward message from socket {}: {}",
+                      recv_socket,
+                      strerror(errno)); // NOLINT(concurrency-mt-unsafe)
         return;
     }
+    buffer_span = buffer_span.subspan(0, bytes_received);
 
-    /* We need to send the message out of the opposite socket in the connection */
-    int sending_socket = is_ingress_socket ? conn.egress_socket : conn.ingress_socket;
-    ssize_t bytes_sent = send(sending_socket, buffer_span.data(), bytes_received, 0x00);
-    while (bytes_sent >= 0) {
-        bytes_sent = send(sending_socket, buffer_span.data(), bytes_received, 0x00);
+    /* We need to send the message out of the opposite socket in the connection
+     */
+    int sending_socket =
+        is_ingress_socket ? conn.egress_socket : conn.ingress_socket;
+    ssize_t bytes_sent =
+        send(sending_socket, buffer_span.data(), bytes_received, 0x00);
+    while (buffer_span.size() > 0) {
+        bytes_sent =
+            send(sending_socket, buffer_span.data(), buffer_span.size(), 0x00);
+        buffer_span = buffer_span.subspan(bytes_sent);
     }
+
+    spdlog::debug("Forwarded message of {} bytes on fd {}", bytes_received,
+                  recv_socket);
 
     /* receiver of the message isn't ready to take that new mesasge so we
      * throttle the reader and wait for the writer to be ready to write again */

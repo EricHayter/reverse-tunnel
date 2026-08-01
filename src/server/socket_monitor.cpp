@@ -25,10 +25,8 @@ SocketMonitor::SocketMonitor()
  * process down */
 namespace {
 [[noreturn]] void abort_on_epoll_failure(int socket_fd) {
-    spdlog::critical(
-        "epoll_ctl failed on fd {}: {} -- aborting",
-        socket_fd,
-        strerror(errno)); // NOLINT(concurrency-mt-unsafe)
+    spdlog::critical("epoll_ctl failed on fd {}: {} -- aborting", socket_fd,
+                     strerror(errno)); // NOLINT(concurrency-mt-unsafe)
     std::abort();
 }
 } // namespace
