@@ -38,20 +38,14 @@ class Server {
 
     void attempt_forward_message(int recv_socket);
 
-    /* Handles a read event on a passive socket (i.e. an connection request)
-     * subscribes the new connection to EPOLL_IN events */
-    std::expected<std::pair<int, sockaddr_in>, Error> accept_connection(int listening_socket);
-
-    static std::expected<int, Error> create_connection(const sockaddr_in &client_addr_info);
-
     /* Handles the initial message from the client indicating the desired
-     * mappings, and creates listening sockets for ingress packets with
-     * create_listening_socket */
+     * mappings, and opens listening sockets for ingress packets with
+     * open_listener */
     Error handle_client_mapping_message(int client_socket);
 
-    /* Creates a socket add calls listen on it. Also subscribes for read EPOLLIN
-     * events on the socket monitor */
-    std::expected<int, Error> create_listening_socket(PortNum port_num);
+    /* Opens a listening socket on the given port, records it, and arms it for
+     * read events on the socket monitor */
+    std::expected<int, Error> open_listener(PortNum port_num);
 
     /* Special case of a listening socket since once the connection is
      * established it will contain mapping requests */

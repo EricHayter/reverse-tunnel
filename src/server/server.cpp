@@ -5,8 +5,6 @@
 #include <span>
 
 #include <arpa/inet.h>
-#include <fcntl.h>
-#include <netdb.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -23,52 +21,21 @@ Server::Server(std::size_t num_workers) {
         workers_m.emplace_back(&Server::worker_func, this);
     }
 
-    auto listener_socket_expected = create_listening_socket(SERVER_LISTENING_PORTNUM);
+    auto listener_socket_expected = open_listener(SERVER_LISTENING_PORTNUM);
     if (!listener_socket_expected) {
         throw std::runtime_error(listener_socket_expected.error().context);
     }
     client_listener_socket_m = *listener_socket_expected;
 }
 
-std::expected<int, Error> Server::create_listening_socket(PortNum port_num) {
-    int listening_socket = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0x00);
-    if (listening_socket == -1) {
-        return std::unexpected<Error>{{.context = "Failed to create a receiving socket"}};
+std::expected<int, Error> Server::open_listener(PortNum port_num) {
+    auto listening_socket = create_listening_socket(port_num);
+    if (!listening_socket) {
+        return listening_socket;
     }
 
-    addrinfo hints{};
-    memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET;       // use IPv4 for now...
-    hints.ai_socktype = SOCK_STREAM; // TCP
-    hints.ai_flags = AI_PASSIVE;     // fill in my IP for me
-
-    addrinfo *local_addr{};
-    int errc = getaddrinfo(nullptr, std::to_string(port_num).c_str(), &hints, &local_addr);
-    if (errc != 0) {
-        return std::unexpected<Error>{{.context = "Failed to get addrinfo for this computer"}};
-    }
-
-    errc = bind(listening_socket, local_addr->ai_addr, local_addr->ai_addrlen);
-    if (errc == -1) {
-        freeaddrinfo(local_addr);
-        return std::unexpected<Error>{{.context = "Failed to bind to address"}};
-    }
-
-    constexpr int BACKLOG_COUNT = 20;
-    errc = listen(listening_socket, BACKLOG_COUNT);
-    if (errc == -1) {
-        freeaddrinfo(local_addr);
-        return std::unexpected<Error>{{.context = "Call to listen() failed"}};
-    }
-
-    listening_sockets_m[listening_socket] = port_num;
-
-    socket_monitor_m.arm(listening_socket, SocketMonitor::Interest::Read);
-
-    spdlog::info("Listening for external connections on {} (socket fd {})",
-                 get_addr_string(*local_addr), listening_socket);
-
-    freeaddrinfo(local_addr);
+    listening_sockets_m[*listening_socket] = port_num;
+    socket_monitor_m.arm(*listening_socket, SocketMonitor::Interest::Read);
     return listening_socket;
 }
 
@@ -116,6 +83,7 @@ void Server::handle_read_event(int socket) {
         }
 
         const auto &[ingress_socket, addr] = *new_connection;
+        socket_monitor_m.arm(ingress_socket, SocketMonitor::Interest::Read);
 
         /* special case: this is a client connection, we should make note of
          * these so we can expect a handshake message, see case above */
@@ -225,7 +193,7 @@ Error Server::handle_client_mapping_message(int client_socket) {
         proxy_destination.sin_port = htons(to_port);
         ingress_port_to_destination_m[from_port] = proxy_destination;
 
-        auto listening_socket = create_listening_socket(from_port);
+        auto listening_socket = open_listener(from_port);
         if (!listening_socket) {
             return listening_socket.error().with(
                 std::format("Failed to setup listening socket on port {}", from_port));
@@ -234,46 +202,3 @@ Error Server::handle_client_mapping_message(int client_socket) {
     return {};
 }
 
-std::expected<std::pair<int, sockaddr_in>, Error> Server::accept_connection(int listening_socket) {
-    sockaddr_in socket_address{};
-    socklen_t addr_len{sizeof(socket_address)};
-
-    int new_socket = accept(listening_socket, reinterpret_cast<sockaddr *>(&socket_address),
-                            &addr_len); // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-    if (new_socket == -1) {
-        return std::unexpected{Error{.context = "Call to accept() failed"}};
-    }
-
-    spdlog::debug("Accepted connection from {} (socket fd {})", get_addr_string(socket_address),
-                  new_socket);
-
-    socket_monitor_m.arm(new_socket, SocketMonitor::Interest::Read);
-    return std::pair{new_socket, socket_address};
-}
-
-std::expected<int, Error> Server::create_connection(const sockaddr_in &client_addr_info) {
-    int new_socket = socket(AF_INET, SOCK_STREAM, 0x00);
-    if (new_socket == -1) {
-        return std::unexpected(
-            Error{.context = std::format("Failed to create a socket: {}",
-                                         strerror(errno))}); // NOLINT(concurrency-mt-unsafe)
-    }
-
-    spdlog::debug("Attempting to connect to {}", get_addr_string(client_addr_info));
-
-    if (connect(new_socket, reinterpret_cast<const sockaddr *>(&client_addr_info),
-                sizeof(client_addr_info)) ==
-        -1) { // NOLINT(cppcoreguidelines-pro-type-reinterpret-cast)
-        return std::unexpected(
-            Error{.context = std::format("Connection attempt failed: {}",
-                                         strerror(errno))}); // NOLINT(concurrency-mt-unsafe)
-    }
-
-    int flags = fcntl(new_socket, F_GETFL, 0);
-    assert(flags != -1);
-    assert(fcntl(new_socket, F_SETFL, flags | O_NONBLOCK) != -1);
-
-    spdlog::debug("Successfully connected to {}", get_addr_string(client_addr_info));
-
-    return new_socket;
-}
