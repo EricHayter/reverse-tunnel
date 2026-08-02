@@ -116,6 +116,10 @@ void Server::handle_read_event(int socket) {
     }
 }
 
+void Server::handle_write_event(int writable_socket) {
+    flush_pipe(*sink_pipes_m.at(writable_socket));
+}
+
 void Server::attempt_forward_message(int recv_socket) {
     Pipe &pipe = *source_pipes_m.at(recv_socket);
 
@@ -128,10 +132,6 @@ void Server::attempt_forward_message(int recv_socket) {
     pipe.message = std::span(pipe.buffer).subspan(0, static_cast<std::size_t>(bytes));
     spdlog::debug("Forwarding {} bytes from fd {} to fd {}", bytes, recv_socket, pipe.sink_socket);
     flush_pipe(pipe);
-}
-
-void Server::handle_write_event(int writable_socket) {
-    flush_pipe(*sink_pipes_m.at(writable_socket));
 }
 
 void Server::flush_pipe(Pipe &pipe) {

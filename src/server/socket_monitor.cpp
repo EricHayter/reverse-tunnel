@@ -14,6 +14,13 @@ SocketMonitor::SocketMonitor()
     write_listener_m = std::jthread(&SocketMonitor::monitor_job, this, epoll_write_fd_m, false);
 }
 
+SocketMonitor::~SocketMonitor() {
+    read_listener_m.request_stop();
+    write_listener_m.request_stop();
+    close(epoll_read_fd_m);
+    close(epoll_write_fd_m);
+}
+
 /* epoll_ctl only fails here on unrecoverable resource exhaustion
  * (ENOSPC/ENOMEM), which means something has already broken down badly. There
  * is nothing sensible to hand back to the caller, so log and take the whole
@@ -66,6 +73,13 @@ void SocketMonitor::unsubscribe(int socket_fd) const {
     epoll_ctl(epoll_write_fd_m, EPOLL_CTL_DEL, socket_fd, nullptr);
 }
 
+std::optional<std::pair<int, SocketMonitor::Event>>
+SocketMonitor::pull_event(const std::stop_token &stop_token) {
+    std::stop_callback callback(stop_token,
+                                []() { spdlog::debug("Stop requested. Preempting block."); });
+    return event_queue_m.pop(stop_token);
+}
+
 std::optional<SocketMonitor::Event> SocketMonitor::classify_event(uint32_t events, bool is_reader) {
     /* The write instance only reports writability; hangup and error are left to
      * the read instance so a fd registered on both does not surface them twice
@@ -87,20 +101,6 @@ std::optional<SocketMonitor::Event> SocketMonitor::classify_event(uint32_t event
         return SocketMonitor::Event::Read;
     }
     return std::nullopt;
-}
-
-std::optional<std::pair<int, SocketMonitor::Event>>
-SocketMonitor::pull_event(const std::stop_token &stop_token) {
-    std::stop_callback callback(stop_token,
-                                []() { spdlog::debug("Stop requested. Preempting block."); });
-    return event_queue_m.pop(stop_token);
-}
-
-SocketMonitor::~SocketMonitor() {
-    read_listener_m.request_stop();
-    write_listener_m.request_stop();
-    close(epoll_read_fd_m);
-    close(epoll_write_fd_m);
 }
 
 void SocketMonitor::monitor_job(const std::stop_token &stop_token, int epoll_fd, bool is_reader) {

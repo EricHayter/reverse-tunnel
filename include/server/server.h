@@ -20,6 +20,8 @@ class Server {
     explicit Server(std::size_t num_workers);
 
   private:
+    /* ---- nested types ---- */
+
     /* A one-way byte stream from a source socket to a sink socket: data read
      * from the source is buffered and drained out of the sink. A full-duplex
      * tunnel is just a pair of these pointing opposite ways */
@@ -32,51 +34,61 @@ class Server {
         std::span<std::byte> message;
     };
 
+    /* ---- setup ---- */
+
+    /* Opens a listening socket on the given port, records it, and arms it for
+     * read events on the socket monitor */
+    std::expected<int, Error> open_listener(PortNum port_num);
+
+    /* ---- worker loop and event handlers ---- */
+
+    void worker_func(const std::stop_token &stop_token);
+
     /* Handles all of the read events on sockets monitored by the socket
      * monitor */
     void handle_read_event(int socket);
 
+    /* Handles a write event: the socket became writable, so drain whatever is
+     * still pending to be sent out of it */
+    void handle_write_event(int writable_socket);
+
+    /* ---- message forwarding ---- */
+
     void attempt_forward_message(int recv_socket);
+
+    /* Sends the pipe's pending message out of its sink. On EAGAIN it arms the
+     * sink for writability and returns (leaving the remainder for a later
+     * flush); once fully sent it re-arms the source for reading */
+    void flush_pipe(Pipe &pipe);
+
+    /* ---- client handshake ---- */
 
     /* Handles the initial message from the client indicating the desired
      * mappings, and opens listening sockets for ingress packets with
      * open_listener */
     Error handle_client_mapping_message(int client_socket);
 
-    /* Opens a listening socket on the given port, records it, and arms it for
-     * read events on the socket monitor */
-    std::expected<int, Error> open_listener(PortNum port_num);
+    /* ---- data members ---- */
+
+    /* IMPORTANT!
+     * socket monitor must be declared before the worker pool since the workers
+     * pull from the monitor directly: it must outlive them, so it is
+     * constructed first and destroyed last */
+    SocketMonitor socket_monitor_m;
+    std::vector<std::jthread> workers_m;
 
     /* Special case of a listening socket since once the connection is
      * established it will contain mapping requests */
-    int client_listener_socket_m;
+    int client_listener_socket_m{};
 
-    /* Maps from listening socket to it's binded port number */
+    /* Maps from listening socket to its bound port number */
     std::unordered_map<int, PortNum> listening_sockets_m;
 
-    /* IMPORTANT!
-     * socket monitor must be declared before the worker functions since they
-     * pull form the monitor directly */
-    SocketMonitor socket_monitor_m;
-
-    // worker pool stuff
-    std::vector<std::jthread> workers_m;
-    void worker_func(const std::stop_token &stop_token);
-
-    // socket fd address of the connected client
+    /* Socket fd to address of each connected client */
     std::unordered_map<int, sockaddr_in> client_sockets_m;
 
     /* Maps from ingress port to destination address */
     std::unordered_map<PortNum, sockaddr_in> ingress_port_to_destination_m;
-
-    /* Handles a write event: the socket became writable, so drain whatever is
-     * still pending to be sent out of it */
-    void handle_write_event(int writable_socket);
-
-    /* Sends the pipe's pending message out of its sink. On EAGAIN it arms the
-     * sink for writability and returns (leaving the remainder for a later
-     * flush); once fully sent it re-arms the source for reading */
-    void flush_pipe(Pipe &pipe);
 
     std::list<Pipe> pipes_m;
 
